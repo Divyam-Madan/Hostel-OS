@@ -18,7 +18,8 @@ export function setStoredToken(token) {
  * @param {RequestInit} options
  */
 export async function api(path, options = {}) {
-  const url = `/api${path.startsWith('/') ? path : `/${path}`}`;
+  const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+  const url = `${BASE_URL}${path}`;
   const headers = { ...options.headers };
   if (options.body && typeof options.body === 'string' && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
