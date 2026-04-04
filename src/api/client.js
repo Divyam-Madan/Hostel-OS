@@ -1,7 +1,7 @@
 /**
  * REST client for HostelOS backend. Uses Vite proxy: /api → http://localhost:5000
  */
-
+console.log("BASE_URL:", import.meta.env.VITE_API_URL);
 const TOKEN_KEY = 'hostel_os_token';
 
 export function getStoredToken() {
@@ -18,6 +18,8 @@ export function setStoredToken(token) {
  * @param {RequestInit} options
  */
 export async function api(path, options = {}) {
+  console.log("BASE_URL:", import.meta.env.VITE_API_URL); // 👈 ADD THIS LINE
+
   const BASE_URL = import.meta.env.VITE_API_URL || '/api';
   const url = `${BASE_URL}${path}`;
   const headers = { ...options.headers };
