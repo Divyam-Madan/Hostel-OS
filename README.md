@@ -616,7 +616,7 @@ Every major system, architecture decision, feature expansion, redesign iteration
 
 GitHub: https://github.com/Divyam-Madan
 
-LinkedIn: [Add your LinkedIn URL](https://www.linkedin.com/in/divyam-madan/)
+LinkedIn: [linkedin.com.divyam-madan](https://www.linkedin.com/in/divyam-madan/)
 
 Email: [divyam.madan.6106@gmail.com](mailto:divyam.madan.6106@gmail.com)
 
