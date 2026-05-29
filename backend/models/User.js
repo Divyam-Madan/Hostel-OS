@@ -8,7 +8,9 @@ const userSchema = new mongoose.Schema(
     username: { type: String, required: true, unique: true, trim: true, minlength: 2, maxlength: 50 },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, required: true, select: false },
+    passwordChangedAt: { type: Date, default: null },
     roomNumber: { type: String, default: '', trim: true },
+    settings: { type: mongoose.Schema.Types.Mixed, default: {} },
     complaints: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Complaint' }],
     reviews: [{ type: mongoose.Schema.Types.ObjectId, ref: 'FoodReview' }],
     /** Mess / service token numbers issued to this user (recent orders). */

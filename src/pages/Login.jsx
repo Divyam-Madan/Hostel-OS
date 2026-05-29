@@ -1,8 +1,9 @@
 // src/pages/Login.jsx
 // Student: email + password, OTP verify, forgot via email
 // Admin: signup (Employee ID emailed) | login (Employee ID + password → OTP → verify)
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '../api/client';
+import { applyTheme, getStoredTheme, getThemeOptions } from '../utils/theme';
 
 /* ─── shape helpers ─────────────────────────────────────────────────── */
 function mapStudentSession(data) {
@@ -103,8 +104,15 @@ function StudentPanel({ onLogin }) {
 
   const run = async (fn) => {
     setError(''); setSuccess(''); setLoading(true);
-    try { await fn(); } catch (e) { setError(e.message || 'Something went wrong'); }
-    finally { setLoading(false); }
+    try {
+      await fn();
+    } catch (e) {
+      // Friendly mapping for common auth errors
+      if (e?.isNetwork) setError('Server unavailable');
+      else if (e?.status === 401) setError('Incorrect email or password');
+      else if (e?.status === 400) setError(e.message || 'Validation error');
+      else setError(e.message || 'Something went wrong');
+    } finally { setLoading(false); }
   };
 
   const handleLogin = () => run(async () => {
@@ -244,7 +252,7 @@ function StudentPanel({ onLogin }) {
 /*  ADMIN PANEL                                                           */
 /* ────────────────────────────────────────────────────────────────────── */
 function AdminPanel({ onLogin }) {
-  // mode: login | signup | verify (OTP after login)
+  // mode: login | signup | verify | forgot | reset
   const [mode, setMode]           = useState('login');
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState('');
@@ -259,6 +267,10 @@ function AdminPanel({ onLogin }) {
   const [empId, setEmpId]         = useState('');
   const [loginPw, setLoginPw]     = useState('');
   const [loginOtp, setLoginOtp]   = useState('');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotEmpId, setForgotEmpId] = useState('');
+  const [resetOtp, setResetOtp]   = useState('');
+  const [resetPw, setResetPw]     = useState('');
   /** Employee ID pending OTP verification (set after successful password step). */
   const [pendingEmpId, setPendingEmpId] = useState('');
 
@@ -303,6 +315,32 @@ function AdminPanel({ onLogin }) {
     onLogin(mapAdminSession(data));
   });
 
+  const handleForgot = () => run(async () => {
+    if (!forgotEmail.trim() && !forgotEmpId.trim()) throw new Error('Email or Employee ID required.');
+    await api('/admin/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email: forgotEmail.trim(), employeeId: forgotEmpId.trim() }),
+    });
+    setSuccess('If an admin account exists, an OTP was sent.');
+    setMode('reset');
+  });
+
+  const handleReset = () => run(async () => {
+    if (!resetOtp.trim() || !resetPw) throw new Error('OTP and new password required.');
+    if (resetPw.length < 8) throw new Error('Password must be at least 8 characters.');
+    await api('/admin/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: forgotEmail.trim(),
+        employeeId: forgotEmpId.trim(),
+        otp: resetOtp.trim(),
+        newPassword: resetPw,
+      }),
+    });
+    setSuccess('Password updated. You can sign in now.');
+    go('login');
+  });
+
   return (
     <div>
       {/* Header */}
@@ -327,6 +365,11 @@ function AdminPanel({ onLogin }) {
           <Field label="Password">
             <input className="input" type="password" value={loginPw} onChange={e => setLoginPw(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} placeholder="••••••••" />
           </Field>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+            <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 12, color: 'var(--accent2)' }} onClick={() => go('forgot')}>
+              Forgot password?
+            </button>
+          </div>
           <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: 12, fontSize: 14, gap: 8, background: 'linear-gradient(135deg, var(--purple), var(--accent))' }} onClick={handleLogin} disabled={loading}>
             {loading ? <Spinner /> : null}{loading ? 'Signing in…' : 'Admin Sign in →'}
           </button>
@@ -391,6 +434,42 @@ function AdminPanel({ onLogin }) {
           </div>
         </>
       )}
+
+      {mode === 'forgot' && (
+        <>
+          <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18 }}>Use your registered email or Employee ID to receive a reset OTP.</p>
+          <Field label="Official Email">
+            <input className="input" type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder="admin@college.edu" />
+          </Field>
+          <Field label="Employee ID">
+            <input className="input" value={forgotEmpId} onChange={e => setForgotEmpId(e.target.value)} placeholder="EMP-ABC123" style={{ fontFamily: 'var(--font2)', letterSpacing: '0.05em' }} />
+          </Field>
+          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: 12, fontSize: 14, gap: 8, background: 'linear-gradient(135deg, var(--purple), var(--accent))' }} onClick={handleForgot} disabled={loading}>
+            {loading ? <Spinner /> : null}{loading ? 'Sending…' : 'Send reset OTP →'}
+          </button>
+          <div style={{ marginTop: 16 }}>
+            <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--accent2)' }} onClick={() => go('login')}>← Back to login</button>
+          </div>
+        </>
+      )}
+
+      {mode === 'reset' && (
+        <>
+          <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18 }}>Enter the OTP and set a new password.</p>
+          <Field label="6-digit OTP">
+            <input className="input" value={resetOtp} onChange={e => setResetOtp(e.target.value.replace(/\D/g,'').slice(0,6))} placeholder="000000" maxLength={6} style={{ letterSpacing: '0.2em', fontSize: 18, fontFamily: 'var(--font2)', textAlign: 'center' }} />
+          </Field>
+          <Field label="New Password">
+            <input className="input" type="password" value={resetPw} onChange={e => setResetPw(e.target.value)} placeholder="Min 8 characters" />
+          </Field>
+          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: 12, fontSize: 14, gap: 8, background: 'linear-gradient(135deg, var(--purple), var(--accent))' }} onClick={handleReset} disabled={loading}>
+            {loading ? <Spinner /> : null}{loading ? 'Updating…' : 'Update password →'}
+          </button>
+          <div style={{ marginTop: 16 }}>
+            <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--accent2)' }} onClick={() => go('login')}>← Back to login</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -401,123 +480,375 @@ function AdminPanel({ onLogin }) {
 export default function Login({ onLogin }) {
   const [portal, setPortal] = useState('student'); // 'student' | 'admin'
   const [visible, setVisible] = useState(false);
+  const [storyIndex, setStoryIndex] = useState(0);
+  const [activeTheme, setActiveTheme] = useState(getStoredTheme());
+  const themeOptions = useMemo(() => getThemeOptions(), []);
+  const activeThemeIndex = Math.max(themeOptions.findIndex((option) => option.id === activeTheme), 0);
 
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
 
-  const features = [
-    { icon: '🍽️', text: 'Smart Mess Management with QR entry' },
-    { icon: '📍', text: 'GPS-based anti-proxy attendance' },
-    { icon: '🛠️', text: 'Real-time complaint tracking & AI priority' },
-    { icon: '🧠', text: 'Gemini-powered mess & complaint insights' },
-    { icon: '🧺', text: 'Laundry slot booking system' },
-    { icon: '🏥', text: 'One-tap ambulance dispatch' },
-  ];
+  useEffect(() => {
+    const next = applyTheme(getStoredTheme());
+    setActiveTheme(next);
+    const onThemeChanged = (event) => {
+      const nextTheme = event?.detail?.theme || getStoredTheme();
+      setActiveTheme(nextTheme);
+    };
+    window.addEventListener('hostel:theme-changed', onThemeChanged);
+    window.addEventListener('storage', onThemeChanged);
+    return () => {
+      window.removeEventListener('hostel:theme-changed', onThemeChanged);
+      window.removeEventListener('storage', onThemeChanged);
+    };
+  }, []);
+
+  const studentStories = useMemo(() => ([
+    { title: 'Attendance synced', detail: 'Proxy checks, QR logs, and late entries stay in one clean view.', accent: 'var(--amber)' },
+    { title: 'Laundry slots booked live', detail: 'Students see availability update the moment a slot fills up.', accent: 'var(--green)' },
+    { title: '247 complaints resolved this month', detail: 'Maintenance conversations feel fast, transparent, and human.', accent: 'var(--accent2)' },
+  ]), []);
+
+  const adminStories = useMemo(() => ([
+    { title: 'Campus pulse in one screen', detail: 'Complaints, events, leaves, and wellbeing in a single calm dashboard.', accent: 'var(--accent2)' },
+    { title: 'Live hostel announcements', detail: 'The right updates reach the right students without noise.', accent: 'var(--green)' },
+    { title: 'Operations with less friction', detail: 'Staff can triage faster when the system feels clear.', accent: 'var(--amber)' },
+  ]), []);
+
+  const featureCards = useMemo(() => ([
+    { icon: '📡', title: 'Real-time operations', caption: 'Socket.IO updates for complaints, attendance, events, and alerts.' },
+    { icon: '🧠', title: 'AI-powered insights', caption: 'Gemini-assisted mess feedback and operational intelligence.' },
+    { icon: '🧺', title: 'Smart hostel utilities', caption: 'Laundry slots, leave approvals, lost & found, and fee tracking.' },
+    { icon: '🏥', title: 'Student wellbeing', caption: 'Counselling, stress tracking, and care workflows in one system.' },
+    { icon: '🎟️', title: 'Campus events ecosystem', caption: 'Registrations, team management, and realtime participation pulse.' },
+    { icon: '🍽️', title: 'Mess intelligence', caption: 'Meal quality trends and student sentiment, not just ratings.' },
+  ]), []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setStoryIndex((index) => (index + 1) % 3);
+    }, 4200);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const setTheme = (next) => {
+    applyTheme(next);
+    setActiveTheme(next);
+  };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg)' }}>
-
-      {/* ── Left branding ── */}
+    <div
+      style={{
+        minHeight: '100dvh',
+        height: '100%',
+        overflow: 'auto',
+        overscrollBehavior: 'contain',
+        background: activeTheme === 'light'
+          ? 'radial-gradient(circle at 18% 14%, rgba(255,213,150,0.36), transparent 24%), radial-gradient(circle at 78% 18%, rgba(196,131,83,0.17), transparent 22%), linear-gradient(135deg, #edddca 0%, #dfc9b1 45%, #cfb499 100%)'
+          : activeTheme === 'rose'
+            ? 'radial-gradient(circle at 18% 15%, rgba(215,153,173,0.20), transparent 26%), radial-gradient(circle at 80% 18%, rgba(166,127,176,0.16), transparent 30%), linear-gradient(135deg, #2b2026 0%, #362731 46%, #21171d 100%)'
+            : 'radial-gradient(circle at 18% 16%, rgba(196,131,83,0.22), transparent 26%), radial-gradient(circle at 78% 18%, rgba(127,143,115,0.16), transparent 28%), linear-gradient(135deg, #211914 0%, #2a2019 46%, #1a1411 100%)',
+        transition: 'background 280ms ease',
+      }}
+    >
       <div
-        className="hide-mobile"
         style={{
-          flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center',
-          padding: '48px 56px', background: 'var(--bg2)',
-          borderRight: '1px solid var(--border)',
-          position: 'relative', overflow: 'hidden',
+          minHeight: '100dvh',
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1.12fr) minmax(390px, 540px)',
+          alignItems: 'start',
+          gap: 0,
         }}
       >
-        {/* BG decorations */}
-        <div style={{ position:'absolute', top:-120, right:-120, width:400, height:400, borderRadius:'50%', background:'radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%)', pointerEvents:'none' }} />
-        <div style={{ position:'absolute', bottom:-80, left:-60, width:300, height:300, borderRadius:'50%', background:'radial-gradient(circle, rgba(168,85,247,0.1) 0%, transparent 70%)', pointerEvents:'none' }} />
-
-        {/* Logo */}
-        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:48, opacity: visible?1:0, transform: visible?'none':'translateY(20px)', transition:'all 0.5s ease' }}>
-          <div style={{ width:44, height:44, borderRadius:14, background:'linear-gradient(135deg, var(--accent), var(--purple))', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:800, color:'#fff', fontFamily:'var(--font2)' }}>H</div>
-          <div>
-            <p style={{ fontFamily:'var(--font2)', fontWeight:700, fontSize:20 }}>HostelOS</p>
-            <p style={{ fontSize:12, color:'var(--text3)' }}>Smart Hostel Portal</p>
+        <section
+          className="hide-mobile"
+          style={{
+            position: 'relative',
+            overflowY: 'auto',
+            padding: '28px 46px 22px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-start',
+            gap: 16,
+            userSelect: 'none',
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.02)), var(--bg2)',
+            borderRight: '1px solid var(--border2)',
+            backdropFilter: 'blur(10px)',
+            minHeight: '100dvh',
+          }}
+        >
+          <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+            <div style={{ position: 'absolute', top: -140, right: -120, width: 420, height: 420, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,230,185,0.68) 0%, rgba(255,230,185,0.20) 35%, transparent 70%)', filter: 'blur(18px)' }} />
+            <div style={{ position: 'absolute', bottom: -120, left: -100, width: 360, height: 360, borderRadius: '50%', background: 'radial-gradient(circle, rgba(184,91,51,0.14) 0%, transparent 68%)', filter: 'blur(20px)' }} />
+            <div style={{ position: 'absolute', inset: '12% 8% auto auto', width: 180, height: 180, borderRadius: '40px', background: 'linear-gradient(180deg, rgba(255,255,255,0.40), rgba(255,255,255,0.10))', transform: 'rotate(12deg)', filter: 'blur(0.5px)' }} />
           </div>
-        </div>
 
-        <div style={{ opacity: visible?1:0, transform: visible?'none':'translateY(20px)', transition:'all 0.6s ease 0.1s' }}>
-          <h1 style={{ fontFamily:'var(--font2)', fontWeight:800, fontSize:36, lineHeight:1.2, marginBottom:14 }}>
-            Everything your hostel<br />
-            <span style={{ background:'linear-gradient(135deg, var(--accent2), var(--purple))', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent' }}>
-              needs. All in one place.
-            </span>
-          </h1>
-          <p style={{ color:'var(--text2)', fontSize:15, lineHeight:1.6, marginBottom:40, maxWidth:400 }}>
-            From mess orders to healthcare alerts — connected to a secure Node.js API with live Socket.IO updates and Gemini AI analytics.
-          </p>
-        </div>
-
-        <div style={{ display:'flex', flexDirection:'column', gap:12, opacity: visible?1:0, transition:'all 0.6s ease 0.2s' }}>
-          {features.map((f,i) => (
-            <div key={f.text} style={{ display:'flex', alignItems:'center', gap:12, opacity: visible?1:0, transform: visible?'none':'translateX(-16px)', transition:`all 0.5s ease ${0.25+i*0.05}s` }}>
-              <div style={{ width:32, height:32, borderRadius:8, flexShrink:0, background:'rgba(99,102,241,0.1)', border:'1px solid rgba(99,102,241,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15 }}>{f.icon}</div>
-              <span style={{ fontSize:13, color:'var(--text2)' }}>{f.text}</span>
+          <div style={{ position: 'relative', zIndex: 1, display: 'grid', gap: 15, alignContent: 'start' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(8px)', transition: 'all 0.5s ease' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 48, height: 48, borderRadius: 16, background: 'linear-gradient(135deg, rgba(196,131,83,0.95), rgba(127,143,115,0.92))', boxShadow: '0 16px 30px rgba(124,92,64,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: 'var(--font2)', fontSize: 22, fontWeight: 800 }}>H</div>
+                <div>
+                  <p style={{ fontFamily: 'var(--font2)', fontWeight: 700, fontSize: 22, color: 'var(--text)', marginBottom: 2 }}>HostelOS</p>
+                  <p style={{ fontSize: 12, color: 'var(--text2)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Student-tech, but warm</p>
+                  <p style={{ fontSize: 12.5, color: 'var(--accent2)', marginTop: 5, fontWeight: 700, textShadow: '0 0 16px rgba(196,131,83,0.12)' }}>Built &amp; designed by Divyam Madan</p>
+                </div>
+              </div>
+              <div className="theme-switcher" style={{ width: 320 }}>
+                <div className="theme-switcher-thumb" style={{ transform: `translateX(${activeThemeIndex * 100}%)` }} />
+                {themeOptions.map((option) => (
+                  <button key={`login-${option.id}`} type="button" className={`theme-option ${activeTheme === option.id ? 'active' : ''}`} onClick={() => setTheme(option.id)}>
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* ── Right form panel ── */}
-      <div style={{
-        width:'100%', maxWidth:500, display:'flex', flexDirection:'column',
-        justifyContent:'center', padding:'48px 40px', background:'var(--bg)',
-        overflowY:'auto',
-        opacity: visible?1:0, transform: visible?'none':'translateX(20px)',
-        transition:'all 0.5s ease 0.15s',
-      }}>
+            <div style={{ maxWidth: 560, opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(10px)', transition: 'all 0.58s ease 0.06s' }}>
+              <p style={{ fontSize: 12, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 8 }}>Morning dashboard for hostel life</p>
+              <h1 style={{ fontFamily: 'var(--font2)', fontWeight: 800, fontSize: 50, lineHeight: 1.0, letterSpacing: '-0.03em', color: 'var(--text)', marginBottom: 11 }}>
+                Calm, modern hostel operations.
+                <span style={{ display: 'block', color: 'var(--accent2)' }}>Built for real student life.</span>
+              </h1>
+              <p style={{ color: 'var(--text2)', fontSize: 16, lineHeight: 1.55, maxWidth: 520 }}>
+                HostelOS brings attendance, complaints, laundry, mess, wellbeing, and admin workflows into one thoughtful place so the app feels less like software and more like a well-run campus.
+              </p>
+            </div>
 
-        {/* Portal switcher */}
-        <div style={{ display:'flex', background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:'var(--radius)', padding:4, marginBottom:28 }}>
-          <button
-            type="button"
-            onClick={() => setPortal('student')}
-            style={{
-              flex:1, padding:'9px 12px', borderRadius:8, border:'none', cursor:'pointer',
-              background: portal==='student' ? 'var(--bg4)' : 'transparent',
-              color: portal==='student' ? 'var(--text)' : 'var(--text2)',
-              fontSize:13, fontWeight:600, fontFamily:'var(--font)', transition:'all .2s',
-              display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-            }}
-          >
-            🎓 Student
-          </button>
-          <button
-            type="button"
-            onClick={() => setPortal('admin')}
-            style={{
-              flex:1, padding:'9px 12px', borderRadius:8, border:'none', cursor:'pointer',
-              background: portal==='admin' ? 'var(--bg4)' : 'transparent',
-              color: portal==='admin' ? 'var(--text)' : 'var(--text2)',
-              fontSize:13, fontWeight:600, fontFamily:'var(--font)', transition:'all .2s',
-              display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-            }}
-          >
-            🧑‍💼 Admin
-          </button>
-        </div>
+            <div style={{ display: 'grid', gap: 10, maxWidth: 700, paddingBottom: 0 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+                {featureCards.map((card, index) => (
+                  <div key={card.title} style={{
+                    padding: '12px 12px',
+                    borderRadius: 15,
+                    border: '1px solid var(--border2)',
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03)), var(--bg3)',
+                    boxShadow: '0 10px 20px rgba(124,92,64,0.08)',
+                    transform: `translateY(${index % 2 === 0 ? 0 : 6}px)`,
+                    opacity: visible ? 1 : 0,
+                    transition: `all 0.38s ease ${0.12 + index * 0.05}s`,
+                    minHeight: 112,
+                  }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 11, background: 'linear-gradient(180deg, rgba(255,255,255,0.18), transparent), var(--bg4)', border: '1px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8, color: 'var(--accent2)', fontSize: 14 }}>{card.icon}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>{card.title}</div>
+                    <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text2)' }}>{card.caption}</div>
+                  </div>
+                ))}
+              </div>
 
-        {/* Separator */}
-        <div style={{ height:1, background:'var(--border)', marginBottom:24 }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1.08fr 0.92fr', gap: 10 }}>
+                <div style={{
+                  borderRadius: 22,
+                  padding: 14,
+                  border: '1px solid var(--border2)',
+                  background: 'linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03)), var(--bg3)',
+                  boxShadow: '0 12px 24px rgba(124,92,64,0.08)',
+                  transform: 'rotate(-1.5deg)',
+                }}>
+                  <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text3)', marginBottom: 8 }}>Live hostel pulse</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>{(portal === 'student' ? studentStories : adminStories)[storyIndex].title}</div>
+                  <div style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--text2)' }}>{(portal === 'student' ? studentStories : adminStories)[storyIndex].detail}</div>
+                </div>
+                <div style={{
+                  borderRadius: 22,
+                  padding: 14,
+                  border: '1px solid var(--border2)',
+                  background: 'linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.03)), var(--bg3)',
+                  boxShadow: '0 12px 24px rgba(124,92,64,0.08)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text3)' }}>Today</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent2)' }}>{portal === 'student' ? 'Student view' : 'Admin view'}</span>
+                  </div>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {[
+                      'Attendance synced',
+                      'Laundry slots booked live',
+                      'Live hostel announcements',
+                      'Wellbeing alerts triaged',
+                      'Event registrations updated',
+                    ].map((item, index) => (
+                      <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(10px)', transition: `all 0.45s ease ${0.15 + index * 0.08}s` }}>
+                        <div style={{ width: 9, height: 9, borderRadius: '50%', background: index === 0 ? 'var(--green)' : index === 1 ? 'var(--amber)' : 'var(--accent2)', boxShadow: '0 0 0 4px rgba(255,255,255,0.42)' }} />
+                        <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
-        {/* Render correct panel */}
-        {portal === 'student'
-          ? <StudentPanel onLogin={onLogin} />
-          : <AdminPanel   onLogin={onLogin} />
-        }
+              <div style={{
+                borderRadius: 20,
+                border: '1px solid var(--border2)',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03)), var(--bg3)',
+                padding: '11px 13px',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                gap: 7,
+              }}>
+                {[
+                  { label: 'Live sockets', value: '12 streams' },
+                  { label: 'AI digest', value: 'Mess + complaints' },
+                  { label: 'Operations today', value: '143 actions' },
+                ].map((widget, index) => (
+                  <div key={widget.label} style={{
+                    borderRadius: 12,
+                    border: '1px solid var(--border)',
+                    padding: '9px 10px',
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.10), transparent), var(--bg4)',
+                    opacity: visible ? 1 : 0,
+                    transform: visible ? 'translateY(0)' : 'translateY(8px)',
+                    transition: `all 0.4s ease ${0.22 + index * 0.06}s`,
+                  }}>
+                    <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text3)', marginBottom: 6 }}>{widget.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{widget.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
 
-        <p style={{ fontSize:11, color:'var(--text3)', textAlign:'center', marginTop:24, lineHeight:1.6 }}>
-          OTP is emailed when SMTP is configured.<br />For testing check the API server console.
-        </p>
+        <section style={{ padding: '12px 18px 18px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto' }}>
+          <div style={{ width: '100%', maxWidth: 540, marginTop: 4, opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(10px)', transition: 'all 0.45s ease 0.05s' }}>
+            <div style={{
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.06)), var(--bg2)',
+              border: '1px solid var(--border2)',
+              borderRadius: 28,
+              padding: 14,
+              boxShadow: '0 20px 44px rgba(124,92,64,0.10)',
+              backdropFilter: 'blur(20px)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 18 }}>
+                <div>
+                  <p style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 6 }}>Secure portal</p>
+                  <h2 style={{ fontFamily: 'var(--font2)', fontWeight: 800, fontSize: 24, lineHeight: 1.15, color: 'var(--text)' }}>Welcome back.</h2>
+                </div>
+                <div style={{
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  background: 'var(--bg3)',
+                  border: '1px solid var(--border2)',
+                  fontSize: 12,
+                  color: 'var(--accent2)',
+                  fontWeight: 700,
+                }}>
+                  {portal === 'student' ? 'Student' : 'Admin'} access
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 18, padding: 4, marginBottom: 14, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10)' }}>
+                {[
+                  { key: 'student', icon: '🎓', label: 'Student' },
+                  { key: 'admin', icon: '🧑‍💼', label: 'Admin' },
+                ].map((item) => {
+                  const active = portal === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setPortal(item.key)}
+                      style={{
+                        flex: 1,
+                        padding: '10px 14px',
+                        borderRadius: 14,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: active ? 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02)), var(--bg4)' : 'transparent',
+                        color: active ? 'var(--text)' : 'var(--text2)',
+                        fontSize: 13,
+                        fontWeight: 700,
+                        fontFamily: 'var(--font)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        boxShadow: active ? 'var(--shadow)' : 'none',
+                        transform: active ? 'translateY(-1px)' : 'translateY(0)',
+                        transition: 'transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, color 180ms ease',
+                      }}
+                    >
+                      <span>{item.icon}</span>
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{
+                borderRadius: 24,
+                border: '1px solid var(--border2)',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03)), var(--bg3)',
+                boxShadow: '0 14px 28px rgba(124,92,64,0.08)',
+                overflow: 'hidden',
+              }}>
+                <div style={{ padding: 14, borderBottom: '1px solid var(--border)' }}>
+                  {portal === 'student' ? <StudentPanel onLogin={onLogin} /> : <AdminPanel onLogin={onLogin} />}
+                </div>
+              </div>
+
+              <p style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'center', marginTop: 10, lineHeight: 1.4 }}>
+                OTP is emailed when SMTP is configured. For testing, check the API server console.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginTop: 10, alignItems: 'center' }}>
+                <a href="https://github.com/Divyam-Madan" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', gap: 8, alignItems: 'center', color: 'var(--text2)', textDecoration: 'none', opacity: 0.85, fontSize: 13 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden style={{ display: 'block' }}>
+                    <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.53-1.36-1.3-1.72-1.3-1.72-1.06-.73.08-.72.08-.72 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.72 1.27 3.38.97.11-.76.41-1.27.75-1.56-2.56-.29-5.25-1.28-5.25-5.71 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.47.11-3.06 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.77.11 3.06.74.81 1.18 1.84 1.18 3.1 0 4.44-2.7 5.41-5.27 5.7.42.36.8 1.07.8 2.16 0 1.56-.01 2.82-.01 3.2 0 .31.21.68.8.56C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z" fill="currentColor"/>
+                  </svg>
+                  <span>Divyam-Madan</span>
+                </a>
+                <a href="https://www.linkedin.com/in/divyam-madan/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text2)', textDecoration: 'none', opacity: 0.75, fontSize: 13 }}>
+                  LinkedIn
+                </a>
+                <a href="mailto:divyam.madan.6106@gmail.com" style={{ color: 'var(--text2)', textDecoration: 'none', opacity: 0.75, fontSize: 13 }}>
+                  divyam.madan.6106@gmail.com
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        .hide-mobile { display: flex !important; flex-direction: column !important; }
-        @media(max-width:768px) { .hide-mobile { display: none !important; } }
+        @keyframes pulseOrb {
+          0% { transform: scale(1); opacity: 0.36; }
+          100% { transform: scale(1.22); opacity: 0; }
+        }
+        .hide-mobile { display: flex !important; }
+        .hide-mobile::after {
+          content: '';
+          position: absolute;
+          right: 36px;
+          bottom: 30px;
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: var(--accent2);
+          box-shadow: 0 0 0 0 rgba(196,131,83,0.24);
+          animation: pulseOrb 1800ms ease-out infinite;
+          pointer-events: none;
+        }
+        .hide-mobile::before {
+          content: '';
+          position: absolute;
+          left: 22%;
+          top: 16%;
+          width: 220px;
+          height: 220px;
+          border-radius: 50%;
+          background: radial-gradient(circle, var(--accent-glow), transparent 66%);
+          filter: blur(16px);
+          pointer-events: none;
+        }
+        @media(max-width: 1120px) {
+          .hide-mobile { display: none !important; }
+          [style*="grid-template-columns: minmax(0, 1.18fr) minmax(360px, 520px)"] { grid-template-columns: 1fr; }
+          [style*="padding: 28px 20px 34px"] { padding-top: 20px !important; }
+        }
+        @media(max-width: 768px) {
+          [style*="grid-template-columns: minmax(0, 1.18fr) minmax(360px, 520px)"] { grid-template-columns: 1fr; }
+          [style*="padding: 28px 20px"] { padding: 16px 12px !important; }
+          [style*="padding: 28px 20px 34px"] { padding: 16px 12px 22px !important; }
+        }
       `}</style>
     </div>
   );

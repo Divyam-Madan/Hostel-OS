@@ -1,7 +1,23 @@
 // src/pages/Counselling.jsx
-import { useState } from 'react';
-import { Card, SectionHeader, GlowCard, Modal } from '../components/ui';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Card, SectionHeader, GlowCard, Modal, Field, ProgressBar, TimelineItem, EmptyState } from '../components/ui';
 import { counsellingSlots } from '../data/mockData';
+import { createWellbeingLog, fetchMyWellbeingLogs } from '../api/wellbeing';
+import { subscribeRealtimeEvent } from '../realtime/socket';
+
+const MOODS = [
+  { value: 'very-low', label: 'Very low', icon: '😣', color: 'var(--red)' },
+  { value: 'low', label: 'Low', icon: '😕', color: 'var(--amber)' },
+  { value: 'okay', label: 'Okay', icon: '😌', color: 'var(--blue)' },
+  { value: 'good', label: 'Good', icon: '🙂', color: 'var(--green)' },
+  { value: 'great', label: 'Great', icon: '😄', color: 'var(--purple)' },
+];
+
+const MOOD_LABELS = Object.fromEntries(MOODS.map((m) => [m.value, m.label]));
+
+function moodColor(value) {
+  return MOODS.find((m) => m.value === value)?.color || 'var(--accent)';
+}
 
 export default function Counselling() {
   const [anonymous, setAnonymous] = useState(true);
@@ -10,8 +26,73 @@ export default function Counselling() {
   const [mode, setMode] = useState('online');
   const [booked, setBooked] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [mood, setMood] = useState('okay');
+  const [stressLevel, setStressLevel] = useState(3);
+  const [notes, setNotes] = useState('');
+  const [topics, setTopics] = useState([]);
+  const [wellbeingLogs, setWellbeingLogs] = useState([]);
+  const [wellbeingLoading, setWellbeingLoading] = useState(true);
+  const [wellbeingSaving, setWellbeingSaving] = useState(false);
+  const [wellbeingNotice, setWellbeingNotice] = useState(null);
 
   const selectedDay = counsellingSlots.find(d => d.id === selectedDate);
+
+  const loadWellbeing = useCallback(async () => {
+    try {
+      setWellbeingLoading(true);
+      const d = await fetchMyWellbeingLogs();
+      setWellbeingLogs(d.logs || []);
+      setWellbeingNotice(null);
+    } catch (err) {
+      setWellbeingLogs([]);
+      setWellbeingNotice({ type: 'error', msg: err.message || 'Failed to load wellbeing logs' });
+    } finally {
+      setWellbeingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWellbeing();
+  }, [loadWellbeing]);
+
+  useEffect(() => {
+    let lastRefreshAt = 0;
+    const refresh = () => {
+      const now = Date.now();
+      if (now - lastRefreshAt < 250) return;
+      lastRefreshAt = now;
+      loadWellbeing();
+    };
+
+    const onRefresh = () => refresh();
+    window.addEventListener('hostel:wellbeing', onRefresh);
+    const offSocket = subscribeRealtimeEvent('wellbeing:update', refresh);
+
+    return () => {
+      window.removeEventListener('hostel:wellbeing', onRefresh);
+      offSocket();
+    };
+  }, [loadWellbeing]);
+
+  const recentStressTrend = useMemo(() => wellbeingLogs.slice(0, 6).map((log) => Number(log.stressLevel) || 3).reverse(), [wellbeingLogs]);
+
+  const submitWellbeing = async () => {
+    setWellbeingSaving(true);
+    setWellbeingNotice(null);
+    try {
+      await createWellbeingLog({ mood, stressLevel, notes, topics });
+      setNotes('');
+      setStressLevel(3);
+      setMood('okay');
+      setTopics([]);
+      setWellbeingNotice({ type: 'success', msg: 'Wellbeing check-in saved' });
+      loadWellbeing();
+    } catch (err) {
+      setWellbeingNotice({ type: 'error', msg: err.message || 'Failed to save check-in' });
+    } finally {
+      setWellbeingSaving(false);
+    }
+  };
 
   return (
     <div style={{ padding: 24 }} className="animate-fadeUp">
@@ -55,6 +136,121 @@ export default function Counselling() {
           </p>
         </div>
         <button className="btn btn-danger btn-sm">Call Now</button>
+      </div>
+
+      <div className="grid-2" style={{ gap: 20, marginBottom: 20, alignItems: 'start' }}>
+        <Card className="card-p">
+          <SectionHeader title="Daily wellbeing check-in" subtitle="Quick mood and stress log saved to MongoDB" />
+          <div style={{ display: 'grid', gap: 14 }}>
+            <Field label="Mood">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {MOODS.map((item) => {
+                  const active = mood === item.value;
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setMood(item.value)}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 999,
+                        border: `1px solid ${active ? item.color : 'var(--border)'}`,
+                        background: active ? `${item.color}18` : 'var(--bg3)',
+                        color: active ? item.color : 'var(--text2)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        fontSize: 13,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+
+            <Field label={`Stress level: ${stressLevel}/5`}>
+              <div style={{ display: 'grid', gap: 10 }}>
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  step="1"
+                  value={stressLevel}
+                  onChange={(e) => setStressLevel(Number(e.target.value))}
+                  style={{ width: '100%' }}
+                />
+                <ProgressBar value={stressLevel} max={5} color={stressLevel >= 4 ? 'var(--red)' : stressLevel >= 3 ? 'var(--amber)' : 'var(--green)'} />
+              </div>
+            </Field>
+
+            <Field label="Notes">
+              <textarea
+                className="input"
+                rows={3}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Optional thoughts, triggers, or support needed"
+              />
+            </Field>
+
+            {wellbeingNotice && (
+              <div style={{ padding: '10px 12px', borderRadius: 10, background: wellbeingNotice.type === 'success' ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', border: `1px solid ${wellbeingNotice.type === 'success' ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`, color: wellbeingNotice.type === 'success' ? '#6ee7b7' : '#fca5a5', fontSize: 13 }}>
+                {wellbeingNotice.msg}
+              </div>
+            )}
+
+            <button className="btn btn-primary" type="button" onClick={submitWellbeing} disabled={wellbeingSaving}>
+              {wellbeingSaving ? 'Saving…' : 'Save check-in'}
+            </button>
+          </div>
+        </Card>
+
+        <Card className="card-p">
+          <SectionHeader title="Recent activity" subtitle="Your latest wellbeing logs" />
+          <div style={{ marginBottom: 14 }}>
+            {recentStressTrend.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'end', height: 90 }}>
+                {recentStressTrend.map((value, index) => (
+                  <div key={`${index}-${value}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: '100%', height: `${Math.max(18, value * 18)}%`, minHeight: 18, borderRadius: 8, background: moodColor(wellbeingLogs[wellbeingLogs.length - 1 - index]?.mood || 'okay') }} />
+                    <span style={{ fontSize: 10, color: 'var(--text3)' }}>{value}/5</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {wellbeingLoading ? (
+            <p style={{ color: 'var(--text3)', fontSize: 13 }}>Loading wellbeing history…</p>
+          ) : wellbeingLogs.length === 0 ? (
+            <EmptyState icon="🫶" title="No check-ins yet" desc="Save your first wellbeing log to see trends here." />
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {wellbeingLogs.slice(0, 5).map((log) => (
+                <TimelineItem key={log.id} dot={log.stressLevel >= 4 ? 'red' : log.stressLevel >= 3 ? 'amber' : 'green'}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{MOOD_LABELS[log.mood] || log.mood}</p>
+                      <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+                        {new Date(log.visitDate).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <div style={{ minWidth: 120 }}>
+                      <ProgressBar value={Number(log.stressLevel) || 3} max={5} color={moodColor(log.mood)} />
+                      <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>Stress {log.stressLevel}/5</p>
+                    </div>
+                  </div>
+                  {log.notes && <p style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8, lineHeight: 1.5 }}>{log.notes}</p>}
+                </TimelineItem>
+              ))}
+            </div>
+          )}
+        </Card>
       </div>
 
       {booked ? (
@@ -141,9 +337,17 @@ export default function Counselling() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {['Academic Stress', 'Anxiety', 'Homesickness', 'Relationships',
                   'Sleep Issues', 'Career Confusion', 'Low Motivation', 'Just want to talk'].map(c => (
-                  <span key={c} className="chip">{c}</span>
+                  <button
+                    key={c}
+                    type="button"
+                    className={`chip ${topics.includes(c) ? 'active-accent' : ''}`}
+                    onClick={() => setTopics((prev) => (prev.includes(c) ? prev.filter((item) => item !== c) : [...prev, c].slice(0, 5)))}
+                  >
+                    {c}
+                  </button>
                 ))}
               </div>
+              {topics.length > 0 && <p style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>Selected: {topics.join(' · ')}</p>}
             </Card>
           </div>
 

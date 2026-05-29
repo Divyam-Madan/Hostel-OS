@@ -7,6 +7,7 @@ import {
 import {
   Card, SectionHeader, StatCard, StatusBadge, Badge,
   TimelineItem, GlowCard,
+  useToast,
 } from '../components/ui';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
@@ -152,6 +153,7 @@ const CT = ({active,payload,label})=>{
 export default function Admin({ onNavigate }) {
   const { user } = useAuth();
   const adminName = user?.name || user?.username || 'Admin';
+  const toast = useToast();
 
   /* ── state ── */
   const [activeTab, setActiveTab]     = useState('overview');
@@ -159,16 +161,21 @@ export default function Admin({ onNavigate }) {
   const [dbComplaints, setDbComplaints] = useState([]);
   const [dbLeaves, setDbLeaves]       = useState([]);
   const [dbStudents, setDbStudents]   = useState([]);
+  const [dbFees, setDbFees]           = useState(null);
   const [alerts, setAlerts]           = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [leaveActions, setLeaveActions]   = useState({});
+  const [feeActions, setFeeActions]   = useState({});
   const [searchTerm, setSearchTerm]   = useState('');
   const [yearFilter, setYearFilter]   = useState('all');
   const [statsLoading, setStatsLoading] = useState(true);
+  const [feesLoading, setFeesLoading] = useState(true);
+  const [feesError, setFeesError]     = useState('');
 
   const [aiComplaintText, setAiComplaintText] = useState('');
   const [aiFoodText, setAiFoodText]           = useState('');
   const [aiLoading, setAiLoading]             = useState(false);
+  const aiLastRunRef = useRef({ complaint:0, food:0 });
   const [dateFrom, setDateFrom] = useState(()=>new Date(Date.now()-30*864e5).toISOString().slice(0,10));
   const [dateTo, setDateTo]     = useState(()=>new Date().toISOString().slice(0,10));
 
@@ -242,6 +249,20 @@ export default function Admin({ onNavigate }) {
     } catch { setAlerts([]); }
   }, [alerts.length, pushNotif]);
 
+  const loadFees = useCallback(async () => {
+    try {
+      setFeesLoading(true);
+      setFeesError('');
+      const d = await api('/admin/fees?limit=20');
+      setDbFees(d || null);
+    } catch (err) {
+      setDbFees(null);
+      setFeesError(err.message || 'Failed to load fee data');
+    } finally {
+      setFeesLoading(false);
+    }
+  }, []);
+
   /* ── initial load ── */
   useEffect(()=>{
     loadStats();
@@ -249,13 +270,14 @@ export default function Admin({ onNavigate }) {
     loadLeaves();
     loadStudents();
     loadAlerts();
+    loadFees();
     pushNotif('✅', 'Admin dashboard loaded successfully');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
   /* ── socket events ── */
   useEffect(()=>{
-    const refresh = ()=>{ loadComplaints(); loadAlerts(); loadStats(); loadLeaves(); };
+    const refresh = ()=>{ loadComplaints(); loadAlerts(); loadStats(); loadLeaves(); loadFees(); };
     window.addEventListener('hostel:complaints', refresh);
     window.addEventListener('hostel:alerts', refresh);
     window.addEventListener('hostel:orders', ()=>{ loadStats(); pushNotif('🍽️','Mess order activity detected'); });
@@ -264,13 +286,13 @@ export default function Admin({ onNavigate }) {
       window.removeEventListener('hostel:alerts', refresh);
       window.removeEventListener('hostel:orders', refresh);
     };
-  }, [loadComplaints, loadAlerts, loadStats, loadLeaves, pushNotif]);
+  }, [loadComplaints, loadAlerts, loadStats, loadLeaves, loadFees, pushNotif]);
 
   /* ── poll every 30 s for updates ── */
   useEffect(()=>{
-    const id = setInterval(()=>{ loadComplaints(); loadLeaves(); loadAlerts(); loadStats(); }, 30000);
+    const id = setInterval(()=>{ loadComplaints(); loadLeaves(); loadAlerts(); loadStats(); loadFees(); }, 30000);
     return ()=>clearInterval(id);
-  },[loadComplaints, loadLeaves, loadAlerts, loadStats]);
+  },[loadComplaints, loadLeaves, loadAlerts, loadStats, loadFees]);
 
   /* ── derive stats ── */
   const totalStudents   = dbStats?.totalStudents   ?? dbStudents.length   ?? '…';
@@ -279,6 +301,27 @@ export default function Admin({ onNavigate }) {
   const messAttendance  = dbStats?.messAttendanceToday ?? '…';
   const feeDefaulters   = dbStats?.pendingFees      ?? '…';
   const vacantBeds      = dbStats?.openRooms        ?? '…';
+  const feeSummary      = dbFees?.summary || {};
+  const feeAnalytics    = dbFees?.analytics || {};
+  const feeRecords      = dbFees?.records || [];
+  const feeTrend        = feeAnalytics.monthlyTrend || feeMonthly;
+
+  const updateFeeStatus = async (id, status) => {
+    setFeeActions((prev) => ({ ...prev, [id]: status }));
+    try {
+      await api(`/admin/fees/${id}/status`, { method:'PATCH', body:JSON.stringify({ status }) });
+      pushNotif('💰', `Fee ${id} marked as ${status}`);
+      await loadFees();
+    } catch (e) {
+      toast.error(e.message || 'Failed to update fee status');
+    } finally {
+      setFeeActions((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }
+  };
 
   /* ── complaints by category (from real data) ── */
   const complaintCatMap = {};
@@ -303,21 +346,35 @@ export default function Admin({ onNavigate }) {
 
   /* ── AI handlers ── */
   const runComplaintAI = async () => {
+    const now = Date.now();
+    if (now - aiLastRunRef.current.complaint < 10_000) return; // 10s client cooldown
+    aiLastRunRef.current.complaint = now;
     setAiLoading(true);
     try {
       const d = await api('/admin/complaint-summary', { method:'POST', body:JSON.stringify({dateFrom,dateTo}) });
-      setAiComplaintText(d.summary||JSON.stringify(d,null,2));
-    } catch(e) { setAiComplaintText(e.message||'Failed — check GEMINI_API_KEY'); }
-    finally { setAiLoading(false); }
+      setAiComplaintText(d.summary || d.analysis || JSON.stringify(d,null,2));
+    } catch(e) {
+      const msg = e.message || '';
+      const friendly = msg.includes('rate') || msg.includes('quota') ? 'AI temporarily unavailable — try later' : (msg || 'AI analysis failed');
+      setAiComplaintText(friendly);
+      toast.error(friendly);
+    } finally { setAiLoading(false); }
   };
 
   const runFoodAI = async () => {
+    const now = Date.now();
+    if (now - aiLastRunRef.current.food < 10_000) return; // 10s cooldown
+    aiLastRunRef.current.food = now;
     setAiLoading(true);
     try {
       const d = await api('/admin/food-summary', { method:'POST', body:JSON.stringify({days:7}) });
-      setAiFoodText(typeof d.analysis==='string'?d.analysis:JSON.stringify(d.analysis,null,2));
-    } catch(e) { setAiFoodText(e.message||'Failed — check GEMINI_API_KEY'); }
-    finally { setAiLoading(false); }
+      setAiFoodText(typeof d.analysis === 'string' ? d.analysis : JSON.stringify(d.analysis || d, null, 2));
+    } catch(e) {
+      const msg = e.message || '';
+      const friendly = msg.includes('rate') || msg.includes('quota') ? 'AI temporarily unavailable — try later' : (msg || 'AI analysis failed');
+      setAiFoodText(friendly);
+      toast.error(friendly);
+    } finally { setAiLoading(false); }
   };
 
   /* ── priority auto-predict (Gemini) for new complaint ── */
@@ -334,7 +391,7 @@ export default function Admin({ onNavigate }) {
       await api(`/complaints/${id}`, { method:'PATCH', body:JSON.stringify({status}) });
       pushNotif('✅', `Complaint ${id} marked as ${status}`);
       loadComplaints();
-    } catch(e) { alert(e.message); }
+    } catch(e) { toast.error(e.message || 'Failed to patch complaint'); }
   };
 
   const tabs = [
@@ -589,14 +646,14 @@ export default function Admin({ onNavigate }) {
                   await api('/admin/trigger-alert',{method:'POST',body:JSON.stringify({type:'wheelchair',title:'Wheelchair assistance',message:'A student requires wheelchair assistance at the main block.'})});
                   pushNotif('♿','Wheelchair alert broadcast to all users');
                   loadAlerts();
-                } catch(e) { alert(e.message); }
+                } catch(e) { toast.error(e.message || 'Failed to trigger alert'); }
               }}>♿ Wheelchair alert</button>
               <button type="button" className="btn btn-secondary btn-sm" onClick={async()=>{
                 try {
                   await api('/admin/trigger-alert',{method:'POST',body:JSON.stringify({type:'maintenance',title:'Maintenance notice',message:'Block C hot water will be unavailable from 2–4 PM today.'})});
                   pushNotif('🔧','Maintenance notice broadcast');
                   loadAlerts();
-                } catch(e) { alert(e.message); }
+                } catch(e) { toast.error(e.message || 'Failed to trigger alert'); }
               }}>🔧 Maintenance notice</button>
               <button type="button" className="btn btn-secondary btn-sm" onClick={loadAlerts}>↻ Refresh list</button>
             </div>
@@ -735,22 +792,109 @@ export default function Admin({ onNavigate }) {
       {/* ══════════════════ FEES ══════════════════ */}
       {activeTab==='fees' && (
         <div>
-          <Card className="card-p" style={{marginBottom:20}}>
-            <SectionHeader title="Monthly Fee Collection" subtitle="Simulated data for chart demo" />
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={feeMonthly}>
-                <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" />
-                <XAxis dataKey="month" tick={{fill:'var(--text2)',fontSize:11}} axisLine={false} tickLine={false} />
-                <YAxis tick={{fill:'var(--text2)',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>`₹${(v/1000).toFixed(0)}k`} />
-                <Tooltip content={<CT />} formatter={v=>`₹${v.toLocaleString('en-IN')}`} />
-                <Area type="monotone" dataKey="collected" name="Collected" stroke="var(--green)" fill="rgba(16,185,129,0.1)" strokeWidth={2} />
-                <Area type="monotone" dataKey="pending"   name="Pending"   stroke="var(--red)"   fill="rgba(239,68,68,0.08)"  strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </Card>
-          <div style={{padding:'12px 16px',background:'var(--amber-bg)',border:'1px solid rgba(245,158,11,0.2)',borderRadius:'var(--radius)',fontSize:13,color:'var(--amber)'}}>
-            ⚠️ Fee data shown above is sample data for UI demo. Connect <code>/admin/fees</code> endpoint for real figures.
+          <div className="grid-3" style={{ gap:12, marginBottom:20 }}>
+            <StatCard icon="💰" label="Total Records" value={feesLoading ? '…' : String(feeSummary.totalRecords ?? 0)} change="live" accentColor="var(--accent)" />
+            <StatCard icon="✅" label="Paid Amount" value={feesLoading ? '…' : `₹${Number(feeSummary.paidAmount || 0).toLocaleString('en-IN')}`} change="collected" accentColor="var(--green)" />
+            <StatCard icon="⚠️" label="Outstanding" value={feesLoading ? '…' : `₹${Number(feeSummary.outstandingAmount || 0).toLocaleString('en-IN')}`} change="pending + overdue" accentColor="var(--amber)" />
           </div>
+
+          <div className="grid-2" style={{ gap:20, marginBottom:20 }}>
+            <Card className="card-p">
+              <SectionHeader title="Monthly Fee Collection" subtitle={feesLoading ? 'Loading live fee analytics…' : 'From database'} />
+              {feesError ? (
+                <p style={{ color:'var(--red)', fontSize:13, padding:'20px 0' }}>{feesError}</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <AreaChart data={feeTrend}>
+                    <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" />
+                    <XAxis dataKey="label" tick={{fill:'var(--text2)',fontSize:11}} axisLine={false} tickLine={false} />
+                    <YAxis tick={{fill:'var(--text2)',fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>`₹${(v/1000).toFixed(0)}k`} />
+                    <Tooltip content={<CT />} formatter={v=>`₹${Number(v).toLocaleString('en-IN')}`} />
+                    <Area type="monotone" dataKey="collected" name="Collected" stroke="var(--green)" fill="rgba(16,185,129,0.1)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="pending" name="Pending" stroke="var(--red)" fill="rgba(239,68,68,0.08)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
+            </Card>
+
+            <Card className="card-p">
+              <SectionHeader title="Payment Status Split" subtitle="Paid / pending / overdue" />
+              <div style={{ display:'flex', alignItems:'center', gap:20 }}>
+                <ResponsiveContainer width={160} height={160}>
+                  <PieChart>
+                    <Pie data={[
+                      { name:'Paid', value: feeAnalytics.statusBreakdown?.paid || 0 },
+                      { name:'Pending', value: feeAnalytics.statusBreakdown?.pending || 0 },
+                      { name:'Overdue', value: feeAnalytics.statusBreakdown?.overdue || 0 },
+                    ]} dataKey="value" innerRadius={45} outerRadius={70}>
+                      {['#10b981','#f59e0b','#ef4444'].map((c,i)=><Cell key={i} fill={c}/>) }
+                    </Pie>
+                    <Tooltip contentStyle={{background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:8,fontSize:12}} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div style={{flex:1}}>
+                  {[['Paid', feeAnalytics.statusBreakdown?.paid || 0, '#10b981'],['Pending', feeAnalytics.statusBreakdown?.pending || 0, '#f59e0b'],['Overdue', feeAnalytics.statusBreakdown?.overdue || 0, '#ef4444']].map(([label, value, color]) => (
+                    <div key={label} style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                      <div style={{width:10,height:10,borderRadius:3,background:color,flexShrink:0}}/>
+                      <span style={{fontSize:12,flex:1}}>{label}</span>
+                      <span style={{fontSize:12,fontWeight:700,color}}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <Card className="card-p">
+            <SectionHeader title="Payment History" subtitle="Live fee records from database" action={<button className="btn btn-ghost btn-sm" onClick={loadFees}>↻ Refresh</button>} />
+            {feesLoading && <p style={{ color:'var(--text3)', fontSize:13 }}>Loading fee records…</p>}
+            {!feesLoading && feeRecords.length === 0 && <p style={{ color:'var(--text3)', fontSize:13 }}>No fee records in database yet.</p>}
+            {!feesLoading && feeRecords.length > 0 && (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>Semester</th>
+                      <th>Amount</th>
+                      <th>Due Date</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {feeRecords.map((record) => (
+                      <tr key={record.id}>
+                        <td>
+                          <div style={{fontWeight:600,fontSize:13}}>{record.user?.username || record.user?.email || '—'}</div>
+                          <div style={{fontSize:11,color:'var(--text3)'}}>{record.user?.roomNumber || '—'}</div>
+                        </td>
+                        <td style={{fontSize:12}}>{record.semester}</td>
+                        <td style={{fontWeight:600,fontFamily:'var(--font2)'}}>₹{Number(record.amount || 0).toLocaleString('en-IN')}</td>
+                        <td style={{fontSize:12,color:'var(--text2)'}}>{record.dueDate ? new Date(record.dueDate).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
+                        <td><StatusBadge status={record.status} /></td>
+                        <td>
+                          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                            {['paid','pending','overdue'].map((status) => (
+                              <button
+                                key={status}
+                                type="button"
+                                className={`btn btn-xs ${status === 'paid' ? 'btn-success' : status === 'pending' ? 'btn-secondary' : 'btn-danger'}`}
+                                disabled={feeActions[record.id] || record.status === status}
+                                onClick={() => updateFeeStatus(record.id, status)}
+                              >
+                                {feeActions[record.id] === status ? 'Saving…' : status}
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
         </div>
       )}
 

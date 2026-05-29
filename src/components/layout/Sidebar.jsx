@@ -50,14 +50,15 @@ export default function Sidebar({ activePage, onNavigate, onLogout, role }) {
       width: collapsed ? 64 : 248,
       minWidth: collapsed ? 64 : 248,
       height: '100vh',
-      background: 'var(--bg2)',
+      background: 'linear-gradient(180deg, rgba(255,255,255,0.02), transparent 26%), var(--bg2)',
       borderRight: '1px solid var(--border)',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
-      transition: 'width .3s cubic-bezier(.4,0,.2,1), min-width .3s cubic-bezier(.4,0,.2,1)',
+      transition: 'width .32s cubic-bezier(.4,0,.2,1), min-width .32s cubic-bezier(.4,0,.2,1), background-color .2s ease',
       flexShrink: 0,
       zIndex: 100,
+      boxShadow: '0 0 0 1px rgba(255,255,255,0.01), 8px 0 30px rgba(0,0,0,0.06)',
     }}>
       {/* Logo */}
       <div style={{ display:'flex', alignItems:'center', gap:10, padding:'18px 14px 14px', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
@@ -90,14 +91,14 @@ export default function Sidebar({ activePage, onNavigate, onLogout, role }) {
               title={collapsed ? item.label : ''}
               style={{
                 display:'flex', alignItems:'center', gap:10,
-                padding:'8px 14px', cursor:'pointer', transition:'all .15s',
+                padding:'8px 14px', cursor:'pointer', transition:'transform .18s ease, background-color .18s ease, color .18s ease, border-color .18s ease',
                 borderLeft: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
-                background: active ? 'rgba(99,102,241,0.1)' : 'transparent',
+                background: active ? 'rgba(196,131,83,0.12)' : 'transparent',
                 color: active ? 'var(--accent2)' : 'var(--text2)',
                 fontSize:13, fontWeight:500, whiteSpace:'nowrap', overflow:'hidden', margin:'1px 0',
               }}
-              onMouseEnter={e => { if (!active) { e.currentTarget.style.background='var(--bg3)'; e.currentTarget.style.color='var(--text)'; }}}
-              onMouseLeave={e => { if (!active) { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='var(--text2)'; }}}
+              onMouseEnter={e => { if (!active) { e.currentTarget.style.background='rgba(255,255,255,0.03)'; e.currentTarget.style.color='var(--text)'; e.currentTarget.style.transform='translateX(2px)'; }}}
+              onMouseLeave={e => { if (!active) { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='var(--text2)'; e.currentTarget.style.transform='translateX(0)'; }}}
             >
               <span style={{ fontSize:16, width:20, textAlign:'center', flexShrink:0 }}>{item.icon}</span>
               <span style={{ opacity: collapsed?0:1, transition:'opacity .2s', flex:1 }}>{item.label}</span>
@@ -139,8 +140,8 @@ export default function Sidebar({ activePage, onNavigate, onLogout, role }) {
               onClick={onLogout}
               title="Logout"
               style={{ background:'transparent', border:'none', cursor:'pointer', color:'var(--text3)', display:'flex', alignItems:'center', padding:4, borderRadius:6, transition:'all .15s', flexShrink:0 }}
-              onMouseEnter={e => { e.currentTarget.style.color='var(--red)'; e.currentTarget.style.background='var(--red-bg)'; }}
-              onMouseLeave={e => { e.currentTarget.style.color='var(--text3)'; e.currentTarget.style.background='transparent'; }}
+              onMouseEnter={e => { e.currentTarget.style.color='var(--red)'; e.currentTarget.style.background='var(--red-bg)'; e.currentTarget.style.transform='translateY(-1px)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color='var(--text3)'; e.currentTarget.style.background='transparent'; e.currentTarget.style.transform='translateY(0)'; }}
             >
               <LogOut size={14} />
             </button>
@@ -155,10 +156,10 @@ export default function Sidebar({ activePage, onNavigate, onLogout, role }) {
             borderRadius:'var(--radius)', cursor:'pointer', color:'var(--text2)',
             fontSize:12, fontWeight:500, fontFamily:'var(--font)',
             display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-            transition:'all .2s',
+            transition:'transform .2s ease, background-color .2s ease, color .2s ease, border-color .2s ease',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background='var(--bg3)'; e.currentTarget.style.color='var(--text)'; }}
-          onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='var(--text2)'; }}
+          onMouseEnter={e => { e.currentTarget.style.background='rgba(255,255,255,0.03)'; e.currentTarget.style.color='var(--text)'; e.currentTarget.style.transform='translateY(-1px)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='var(--text2)'; e.currentTarget.style.transform='translateY(0)'; }}
         >
           <span style={{ transform: collapsed?'rotate(180deg)':'none', transition:'transform .3s', display:'inline-block' }}>←</span>
           {!collapsed && <span>Collapse</span>}

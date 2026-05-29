@@ -15,6 +15,10 @@ const hostelEventSchema = new mongoose.Schema(
     venue: { type: String, default: '', trim: true },
     startsAt: { type: Date },
     endsAt: { type: Date },
+    // Participant capacity
+    seats: { type: Number, default: 100 },
+    // Waitlist entries when event is full
+    waitlist: [registrationSchema],
     isActive: { type: Boolean, default: true },
     registrations: [registrationSchema],
   },

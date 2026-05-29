@@ -2,6 +2,7 @@
 // ─── All small reusable UI components in one file ────────────────────────────
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 // ─── STAT CARD ───────────────────────────────────────────────────────────────
@@ -35,6 +36,7 @@ export function StatusBadge({ status }) {
     'in-progress':{ variant: 'blue',  label: 'In Progress' },
     paid:        { variant: 'green',  label: 'Paid' },
     due:         { variant: 'red',    label: 'Due' },
+    overdue:     { variant: 'red',    label: 'Overdue' },
     partial:     { variant: 'amber',  label: 'Partial' },
     lost:        { variant: 'red',    label: 'Lost' },
     found:       { variant: 'green',  label: 'Found' },
@@ -138,31 +140,43 @@ export function Card({ children, className = '', style, hover = false, onClick }
 // ─── MODAL ───────────────────────────────────────────────────────────────────
 export function Modal({ open, onClose, title, children, width = 480 }) {
   if (!open) return null;
-  return (
+
+  const modal = (
     <div
       style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(22,16,12,0.46)', backdropFilter: 'blur(10px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
+        animation: 'modalFadeIn 180ms ease-out',
       }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
       <div
         className="animate-fadeUp"
+        role="dialog"
+        aria-modal="true"
         style={{
-          background: 'var(--bg2)', border: '1px solid var(--border2)',
-          borderRadius: 'var(--radius-lg)', width: '100%', maxWidth: width,
-          maxHeight: '90vh', overflow: 'auto',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.03), transparent 24%), var(--bg2)',
+          border: '1px solid var(--border2)', borderRadius: 'var(--radius-lg)',
+          width: '100%', maxWidth: width, maxHeight: '90vh', overflow: 'hidden', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column',
         }}
       >
         <div className="flex items-center justify-between" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
           <h3 className="font2 font-semibold" style={{ fontSize: 15 }}>{title}</h3>
-          <button className="btn-icon" onClick={onClose}><X size={16} /></button>
+          <button className="btn-icon" onClick={onClose} aria-label="Close dialog"><X size={16} /></button>
         </div>
-        <div style={{ padding: 20 }}>{children}</div>
+        <div style={{ padding: 20, overflowY: 'auto', minHeight: 0 }}>{children}</div>
       </div>
     </div>
   );
+
+  // Render modal into document body to avoid being clipped by transformed ancestors
+  try {
+    return createPortal(modal, document.body);
+  } catch (e) {
+    // Fallback to inline render if portal fails (e.g., SSR), preserving behavior
+    return modal;
+  }
 }
 
 // ─── INPUT FIELD ─────────────────────────────────────────────────────────────
@@ -259,3 +273,6 @@ export function IconBox({ icon, color = 'var(--accent)', size = 36 }) {
     </div>
   );
 }
+
+// Toast provider (small notification API)
+export { ToastProvider, useToast } from './Toast.jsx';

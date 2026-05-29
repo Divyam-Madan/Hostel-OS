@@ -1,7 +1,7 @@
 // src/pages/Mess.jsx
 import { useState, useEffect } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, RadarChart, Radar, PolarGrid, PolarAngleAxis } from 'recharts';
-import { Card, SectionHeader, StarRating, GlowCard, Badge, Modal, Field } from '../components/ui';
+import { Card, SectionHeader, StarRating, GlowCard, Badge, Modal, Field, useToast } from '../components/ui';
 import { messMenu as mockMessMenu } from '../data/mockData';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
@@ -130,6 +130,7 @@ const nutritionData = [
 
 export default function Mess() {
   const { user } = useAuth();
+  const toast = useToast();
   const [menu, setMenu] = useState(null);
   const [qrOpen, setQrOpen]         = useState(false);
   const [feedbackMeal, setFeedbackMeal] = useState(null);
@@ -347,7 +348,7 @@ export default function Mess() {
                 const data = await api('/order', { method: 'POST', body: JSON.stringify({ items, mealType: rsMeal }) });
                 setOrderToken(data.tokenNumber);
               } catch (e) {
-                alert(e.message || 'Order failed');
+                toast.error(e.message || 'Order failed');
               } finally {
                 setOrdering(false);
               }

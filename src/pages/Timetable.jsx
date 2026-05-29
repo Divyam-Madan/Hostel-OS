@@ -1,7 +1,10 @@
 // src/pages/Timetable.jsx
-import { useState } from 'react';
-import { Card, SectionHeader, Badge, GlowCard } from '../components/ui';
-import { timetable, missedClasses, todayTimeline } from '../data/mockData';
+import { useState, useEffect, useCallback } from 'react';
+import { Card, SectionHeader, Badge, GlowCard, TimelineItem, Modal, Field, useToast } from '../components/ui';
+import { fetchTimetable, createClass, updateClass, deleteClass } from '../api/timetable';
+import { subscribeRealtimeEvent } from '../realtime/socket';
+import { missedClasses, todayTimeline } from '../data/mockData';
+import { useAuth } from '../hooks/useAuth';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const TYPE_STYLES = {
@@ -15,10 +18,88 @@ const TIMELINE_ICONS = { mess: '🍽️', class: '📚', gym: '🏋️', event: 
 const today = DAYS[new Date().getDay() - 1] || 'Mon';
 
 export default function Timetable() {
+  const { role } = useAuth();
   const [activeDay, setActiveDay] = useState(today);
   const [editing, setEditing] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState('add');
+  const [editorTarget, setEditorTarget] = useState(null);
+  const [editorDraft, setEditorDraft] = useState({ day: today, subject: '', time: '', room: '', faculty: '', type: 'lecture' });
+  const [loading, setLoading] = useState(true);
+  const [timetableData, setTimetableData] = useState({});
 
-  const todayClasses = timetable[activeDay] || [];
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const t = await fetchTimetable();
+      setTimetableData(t || {});
+    } catch (err) {
+      setTimetableData({});
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    const off = subscribeRealtimeEvent('timetable:update', () => load());
+    const onWindow = () => load();
+    window.addEventListener('hostel:timetable', onWindow);
+    return () => {
+      off();
+      window.removeEventListener('hostel:timetable', onWindow);
+    };
+  }, [load]);
+
+  const todayClasses = timetableData[activeDay] || [];
+  const toast = useToast();
+  const canEdit = role === 'admin';
+
+  const openAddEditor = () => {
+    setEditorMode('add');
+    setEditorTarget(null);
+    setEditorDraft({ day: activeDay, subject: '', time: '', room: '', faculty: '', type: 'lecture' });
+    setEditorOpen(true);
+  };
+
+  const openEditEditor = (cls) => {
+    setEditorMode('edit');
+    setEditorTarget(cls);
+    setEditorDraft({
+      day: activeDay,
+      subject: cls.subject || '',
+      time: cls.time || '',
+      room: cls.room || '',
+      faculty: cls.faculty || '',
+      type: cls.type || 'lecture',
+    });
+    setEditorOpen(true);
+  };
+
+  const saveEditor = async () => {
+    if (!editorDraft.subject.trim() || !editorDraft.time.trim()) {
+      toast.error('Subject and time are required');
+      return;
+    }
+    try {
+      if (editorMode === 'edit' && editorTarget?.id) {
+        await updateClass(editorTarget.id, editorDraft);
+        toast.success('Class updated');
+      } else {
+        await createClass(editorDraft);
+        toast.success('Class added');
+      }
+      setEditorOpen(false);
+      setEditorTarget(null);
+      setEditorDraft({ day: activeDay, subject: '', time: '', room: '', faculty: '', type: 'lecture' });
+      load();
+    } catch (e) {
+      toast.error(e?.message || 'Failed to save class');
+    }
+  };
 
   return (
     <div style={{ padding: 24 }} className="animate-fadeUp">
@@ -27,9 +108,15 @@ export default function Timetable() {
           <h1 className="page-title-lg">Timetable & Alerts</h1>
           <p className="page-desc">Class schedule, missed lectures and today's agenda</p>
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={() => setEditing(e => !e)}>
-          {editing ? '✓ Done Editing' : '✏️ Edit Timetable'}
-        </button>
+        {canEdit ? (
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditing(e => !e)}>
+            {editing ? '✓ Done Editing' : '✏️ Edit Timetable'}
+          </button>
+        ) : (
+          <div style={{ padding: '8px 12px', borderRadius: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.18)', color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>
+            Admin only: timetable editing is disabled for student sessions
+          </div>
+        )}
       </div>
 
       {/* Missed class alerts */}
@@ -97,9 +184,26 @@ export default function Timetable() {
                     </p>
                   </div>
                   <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 8, background: ts.bg, color: ts.color, fontWeight: 600, border: `1px solid ${ts.border}` }}>{cls.type}</span>
-                  {editing && (
-                    <button className="btn btn-ghost btn-xs" style={{ color: 'var(--red)', borderColor: 'rgba(239,68,68,0.2)' }}>✕</button>
-                  )}
+                          {editing && canEdit && (
+                            <div style={{ display: 'flex', gap: 8 }}>
+                              <button
+                                className="btn btn-ghost btn-xs"
+                                style={{ color: 'var(--amber)' }}
+                                onClick={async () => {
+                                  openEditEditor(cls);
+                                  }}
+                              >✎</button>
+                              <button
+                                className="btn btn-ghost btn-xs"
+                                style={{ color: 'var(--red)', borderColor: 'rgba(239,68,68,0.2)' }}
+                                onClick={async () => {
+                                  const ok = await toast.confirm({ title: 'Delete class', message: 'Delete this class?' });
+                                  if (!ok) return;
+                                  try { await deleteClass(cls.id); load(); toast.success('Class deleted'); } catch (e) { toast.error('Delete failed'); }
+                                }}
+                              >✕</button>
+                            </div>
+                          )}
                 </div>
               );
             })}
@@ -108,10 +212,19 @@ export default function Timetable() {
                 🎉 No classes on {activeDay}!
               </div>
             )}
-            {editing && (
-              <button className="btn btn-ghost w-full" style={{ justifyContent: 'center', borderStyle: 'dashed' }}>
+            {editing && canEdit && (
+              <button
+                className="btn btn-ghost w-full"
+                style={{ justifyContent: 'center', borderStyle: 'dashed' }}
+                onClick={openAddEditor}
+              >
                 + Add Class
               </button>
+            )}
+            {editing && !canEdit && (
+              <div style={{ padding: '12px 14px', borderRadius: 'var(--radius)', border: '1px dashed var(--border2)', color: 'var(--text3)', fontSize: 12, textAlign: 'center' }}>
+                Switch to an admin session to add, edit, or delete classes.
+              </div>
             )}
           </div>
         </Card>
@@ -165,6 +278,45 @@ export default function Timetable() {
           </GlowCard>
         </div>
       </div>
+
+      <Modal
+        open={editorOpen}
+        onClose={() => setEditorOpen(false)}
+        title={editorMode === 'edit' ? 'Edit class' : 'Add class'}
+        width={560}
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="Day">
+            <select className="input" value={editorDraft.day} onChange={(e) => setEditorDraft((prev) => ({ ...prev, day: e.target.value }))}>
+              {DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
+            </select>
+          </Field>
+          <Field label="Type">
+            <select className="input" value={editorDraft.type} onChange={(e) => setEditorDraft((prev) => ({ ...prev, type: e.target.value }))}>
+              <option value="lecture">lecture</option>
+              <option value="lab">lab</option>
+              <option value="project">project</option>
+              <option value="seminar">seminar</option>
+            </select>
+          </Field>
+          <Field label="Subject">
+            <input className="input" value={editorDraft.subject} onChange={(e) => setEditorDraft((prev) => ({ ...prev, subject: e.target.value }))} placeholder="Subject name" />
+          </Field>
+          <Field label="Time">
+            <input className="input" value={editorDraft.time} onChange={(e) => setEditorDraft((prev) => ({ ...prev, time: e.target.value }))} placeholder="9:00 - 10:00" />
+          </Field>
+          <Field label="Room">
+            <input className="input" value={editorDraft.room} onChange={(e) => setEditorDraft((prev) => ({ ...prev, room: e.target.value }))} placeholder="LH-101" />
+          </Field>
+          <Field label="Faculty">
+            <input className="input" value={editorDraft.faculty} onChange={(e) => setEditorDraft((prev) => ({ ...prev, faculty: e.target.value }))} placeholder="Dr. Name" />
+          </Field>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditorOpen(false)}>Cancel</button>
+          <button className="btn btn-primary btn-sm" onClick={saveEditor}>{editorMode === 'edit' ? 'Save Changes' : 'Add Class'}</button>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -1,15 +1,17 @@
 // src/pages/Complaints.jsx — live data from API + Socket.IO refresh
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
-import { Card, SectionHeader, StatusBadge, PriorityBadge, ChipFilter, Modal, Field } from '../components/ui';
+import { Card, SectionHeader, StatusBadge, PriorityBadge, ChipFilter, Modal, Field, useToast } from '../components/ui';
 import { complaintCategories } from '../data/mockData';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
+import { subscribeRealtimeEvent } from '../realtime/socket';
 
 const COLORS = ['#6366f1','#3b82f6','#10b981','#f59e0b','#84cc16','#a855f7','#ec4899','#f97316','#14b8a6','#64748b'];
 
 export default function Complaints() {
   const { user } = useAuth();
+  const toast = useToast();
   const [list, setList] = useState([]);
   const [loadError, setLoadError] = useState('');
   const [filter, setFilter] = useState('all');
@@ -37,9 +39,24 @@ export default function Complaints() {
   }, [load]);
 
   useEffect(() => {
-    const onRefresh = () => load();
+    let lastRefreshAt = 0;
+    const requestRefresh = () => {
+      const now = Date.now();
+      if (now - lastRefreshAt < 250) return;
+      lastRefreshAt = now;
+      load();
+    };
+
+    const onRefresh = () => requestRefresh();
     window.addEventListener('hostel:complaints', onRefresh);
-    return () => window.removeEventListener('hostel:complaints', onRefresh);
+
+    // Incremental adoption: listen to socket event directly while keeping window event bridge.
+    const offSocket = subscribeRealtimeEvent('complaint:update', requestRefresh);
+
+    return () => {
+      window.removeEventListener('hostel:complaints', onRefresh);
+      offSocket();
+    };
   }, [load]);
 
   useEffect(() => {
@@ -88,7 +105,7 @@ export default function Complaints() {
       setSubmitted(true);
       await load();
     } catch (e) {
-      alert(e.message || 'Submit failed');
+      toast.error(e.message || 'Submit failed');
     } finally {
       setSubmitting(false);
     }

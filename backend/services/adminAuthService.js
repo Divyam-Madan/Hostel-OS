@@ -26,6 +26,21 @@ function randomSixDigit() {
   return String(crypto.randomInt(100000, 1000000));
 }
 
+async function storeOtp(admin, purpose = 'signin') {
+  const otp = randomSixDigit();
+  const otpHash = await bcrypt.hash(otp, 10);
+  const otpExpiry = new Date(Date.now() + OTP_TTL_MS);
+  await Admin.updateOne({ _id: admin._id }, { $set: { otp: otpHash, otpExpiry } });
+  await sendOtpEmail(admin.email, otp, `Admin ${purpose}`);
+  return { otpExpiry };
+}
+
+async function verifyOtpForAdmin(admin, code) {
+  if (!admin?.otp || !admin?.otpExpiry) return false;
+  if (new Date() > admin.otpExpiry) return false;
+  return bcrypt.compare(code, admin.otp);
+}
+
 async function generateUniqueEmployeeId() {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     let suffix = '';
@@ -117,14 +132,7 @@ export async function adminLoginRequest({ employeeId, password }) {
     throw e;
   }
 
-  const otp = randomSixDigit();
-  const otpExpiry = new Date(Date.now() + OTP_TTL_MS);
-  await Admin.updateOne(
-    { _id: admin._id },
-    { $set: { otp, otpExpiry } }
-  );
-
-  await sendOtpEmail(admin.email, otp, 'Admin sign-in');
+  await storeOtp(admin, 'sign-in');
 
   return { message: 'OTP sent to your email' };
 }
@@ -139,16 +147,9 @@ export async function adminVerifyOtpAndToken({ employeeId, otp }) {
     e.statusCode = 400;
     throw e;
   }
-  if (admin.otp !== code) {
+  const ok = await verifyOtpForAdmin(admin, code);
+  if (!ok) {
     const e = new Error('Invalid or expired OTP');
-    e.statusCode = 400;
-    throw e;
-  }
-  if (!admin.otpExpiry || new Date() > admin.otpExpiry) {
-    admin.otp = undefined;
-    admin.otpExpiry = undefined;
-    await admin.save();
-    const e = new Error('OTP has expired');
     e.statusCode = 400;
     throw e;
   }
@@ -164,6 +165,63 @@ export async function adminVerifyOtpAndToken({ employeeId, otp }) {
     token,
     user: publicAdmin(fresh),
   };
+}
+
+export async function adminForgotPasswordRequest({ email, employeeId }) {
+  const em = email ? assertEmail(email) : null;
+  const emp = employeeId ? String(employeeId).trim().toUpperCase() : null;
+  const admin = await Admin.findOne({ $or: [em ? { email: em } : null, emp ? { employeeId: emp } : null].filter(Boolean) }).select('+otp');
+  if (!admin) {
+    return { message: 'If an admin account exists, an OTP was sent' };
+  }
+  await storeOtp(admin, 'password reset');
+  return { message: 'If an admin account exists, an OTP was sent' };
+}
+
+export async function adminResetPassword({ email, employeeId, otp, newPassword }) {
+  const em = email ? assertEmail(email) : null;
+  const emp = employeeId ? String(employeeId).trim().toUpperCase() : null;
+  const code = assertOtp(otp);
+  const pwd = assertPassword(newPassword);
+  const admin = await Admin.findOne({ $or: [em ? { email: em } : null, emp ? { employeeId: emp } : null].filter(Boolean) }).select('+password +otp +otpExpiry');
+  if (!admin || !admin.otp || !admin.otpExpiry) {
+    const e = new Error('Invalid or expired OTP');
+    e.statusCode = 400;
+    throw e;
+  }
+  const ok = await verifyOtpForAdmin(admin, code);
+  if (!ok) {
+    const e = new Error('Invalid or expired OTP');
+    e.statusCode = 400;
+    throw e;
+  }
+  admin.password = await bcrypt.hash(pwd, 12);
+  admin.passwordChangedAt = new Date();
+  admin.otp = undefined;
+  admin.otpExpiry = undefined;
+  await admin.save();
+  return { message: 'Password updated. You can sign in now.' };
+}
+
+export async function adminChangePassword(adminDoc, currentPassword, newPassword) {
+  const current = String(currentPassword || '');
+  const next = assertPassword(newPassword);
+  const admin = await Admin.findById(adminDoc._id).select('+password');
+  if (!admin) {
+    const e = new Error('Admin not found');
+    e.statusCode = 404;
+    throw e;
+  }
+  const ok = await bcrypt.compare(current, admin.password);
+  if (!ok) {
+    const e = new Error('Current password is incorrect');
+    e.statusCode = 400;
+    throw e;
+  }
+  admin.password = await bcrypt.hash(next, 12);
+  admin.passwordChangedAt = new Date();
+  await admin.save();
+  return { message: 'Password updated' };
 }
 
 function publicAdmin(doc) {

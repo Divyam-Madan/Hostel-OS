@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
-
-const STATUS = ['pending', 'in_progress', 'resolved'];
+import { COMPLAINT_DB_STATUSES } from '../utils/complaintStatus.js';
 
 const complaintSchema = new mongoose.Schema(
   {
@@ -9,7 +8,7 @@ const complaintSchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true, maxlength: 200 },
     description: { type: String, default: '', maxlength: 5000 },
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
-    status: { type: String, enum: STATUS, default: 'pending' },
+    status: { type: String, enum: COMPLAINT_DB_STATUSES, default: 'pending' },
     roomHint: { type: String, default: '', trim: true },
   },
   { timestamps: true }

@@ -4,12 +4,17 @@ import { Alert } from '../models/Alert.js';
 import { Admin } from '../models/Admin.js';
 import { env } from '../config/env.js';
 import { summarizeComplaints, analyzeFoodReviews } from '../services/geminiService.js';
+import { AnalysisCache } from '../models/AnalysisCache.js';
 import { emitAlertNew } from '../services/socketService.js';
 import {
   adminSignupRequest,
   adminLoginRequest,
   adminVerifyOtpAndToken,
+  adminForgotPasswordRequest,
+  adminResetPassword,
+  adminChangePassword,
 } from '../services/adminAuthService.js';
+import { listNotifications, markNotificationRead } from '../services/notificationService.js';
 
 export async function complaintSummary(req, res, next) {
   try {
@@ -33,7 +38,23 @@ export async function complaintSummary(req, res, next) {
         date: c.createdAt,
       })
     );
+    const key = `complaint:${dateFrom}:${dateTo}`;
+    // try cache
+    try {
+      const cached = await AnalysisCache.findOne({ key }).lean();
+      if (cached && cached.updatedAt && Date.now() - new Date(cached.updatedAt).getTime() < 1000 * 60 * 60) {
+        return res.json({ success: true, count: list.length, summary: cached.payload?.summary || null, fromCache: true });
+      }
+    } catch (err) {
+      // ignore cache errors
+    }
+
     const summary = await summarizeComplaints(lines.join('\n'));
+    try {
+      await AnalysisCache.findOneAndUpdate({ key }, { payload: { summary }, updatedAt: new Date() }, { upsert: true });
+    } catch (err) {
+      // ignore cache write errors
+    }
     res.json({ success: true, count: list.length, summary });
   } catch (e) {
     next(e);
@@ -49,7 +70,22 @@ export async function foodSummary(req, res, next) {
       .select('foodItem rating comment')
       .lean();
     const lines = list.map((r) => `${r.foodItem}\t${r.rating}\t${r.comment || ''}`);
+    const key = `food:${days}`;
+    try {
+      const cached = await AnalysisCache.findOne({ key }).lean();
+      if (cached && cached.updatedAt && Date.now() - new Date(cached.updatedAt).getTime() < 1000 * 60 * 60) {
+        return res.json({ success: true, count: list.length, analysis: cached.payload?.analysis || null, fromCache: true });
+      }
+    } catch (err) {
+      // ignore cache lookup errors
+    }
+
     const analysis = await analyzeFoodReviews(lines.join('\n'));
+    try {
+      await AnalysisCache.findOneAndUpdate({ key }, { payload: { analysis }, updatedAt: new Date() }, { upsert: true });
+    } catch (err) {
+      // ignore cache write errors
+    }
     res.json({ success: true, count: list.length, analysis });
   } catch (e) {
     next(e);
@@ -158,10 +194,11 @@ export async function adminProfile(req, res, next) {
           email: 'admin@hostelos.local',
           employeeId: null,
           photo: 'AD',
+          settings: {},
         },
       });
     }
-    const admin = await Admin.findById(req.user.id).select('-password -otp');
+      const admin = await Admin.findById(req.user.id).select('-password -otp');
     if (!admin) {
       return res.status(404).json({ success: false, message: 'Admin not found' });
     }
@@ -180,8 +217,92 @@ export async function adminProfile(req, res, next) {
         email: admin.email,
         employeeId: admin.employeeId,
         photo: initials,
+        settings: admin.settings || {},
       },
     });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function patchAdminProfile(req, res, next) {
+  try {
+    if (req.user.id === 'admin') {
+      return res.status(400).json({ success: false, message: 'Built-in admin profile cannot be changed' });
+    }
+    const { settings } = req.body || {};
+    const admin = await Admin.findByIdAndUpdate(req.user.id, { $set: { settings: settings && typeof settings === 'object' ? settings : {} } }, { new: true }).select('-password -otp');
+    if (!admin) return res.status(404).json({ success: false, message: 'Admin not found' });
+    const initials = String(admin.name || 'A')
+      .split(/\s+/)
+      .map((p) => p[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'AD';
+    res.json({
+      success: true,
+      user: {
+        id: admin._id.toString(),
+        name: admin.name,
+        username: admin.name,
+        email: admin.email,
+        employeeId: admin.employeeId,
+        photo: initials,
+        settings: admin.settings || {},
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function adminForgotPassword(req, res, next) {
+  try {
+    const result = await adminForgotPasswordRequest(req.body);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function adminResetPasswordHandler(req, res, next) {
+  try {
+    const result = await adminResetPassword(req.body);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function adminChangePasswordHandler(req, res, next) {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Admin access only' });
+    }
+    if (req.user.id === 'admin') {
+      return res.status(400).json({ success: false, message: 'Built-in admin password is managed by environment config' });
+    }
+    const result = await adminChangePassword({ _id: req.user.id }, req.body?.currentPassword, req.body?.newPassword);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listAdminAlerts(req, res, next) {
+  try {
+    const alerts = await listNotifications({ userId: req.user.id === 'admin' ? null : req.user.id, role: 'admin', limit: 100 });
+    res.json({ success: true, alerts });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function patchAdminAlert(req, res, next) {
+  try {
+    const alert = await markNotificationRead(req.params.id, req.user.id === 'admin' ? null : req.user.id, typeof req.body?.read === 'boolean' ? req.body.read : true);
+    if (!alert) return res.status(404).json({ success: false, message: 'Not found' });
+    res.json({ success: true, alert });
   } catch (e) {
     next(e);
   }

@@ -3,7 +3,8 @@
 // Persists in localStorage; hydrates role from GET /api/admin/profile or /api/user/profile.
 
 import { useState, useCallback, useEffect } from 'react';
-import { api, getStoredToken, setStoredToken } from '../api/client';
+import { api, getStoredToken, setStoredToken, resetAuthFailureState } from '../api/client';
+import { disconnectRealtimeSocket } from '../realtime/socket';
 
 const SESSION_KEY = 'hostel_os_auth';
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -53,6 +54,7 @@ export function useAuth() {
   const applySession = useCallback((payload) => {
     const { token, role, user } = payload;
     setStoredToken(token);
+    resetAuthFailureState();
     const u = user?.name || user?.username
       ? { ...user, role }
       : buildUser(user, role);
@@ -74,6 +76,8 @@ export function useAuth() {
   const logout = useCallback(() => {
     setStoredToken('');
     localStorage.removeItem(SESSION_KEY);
+    resetAuthFailureState();
+    disconnectRealtimeSocket();
     setAuthState(null);
   }, []);
 
@@ -111,11 +115,23 @@ export function useAuth() {
           });
         }
       } catch {
-        if (!cancelled) logout();
+        if (!cancelled) {
+          // Session may be invalid/expired — clear and notify user
+          logout();
+          try { window.dispatchEvent(new CustomEvent('hostel:session-expired')); } catch (e) {}
+        }
       }
     })();
     return () => { cancelled = true; };
   }, [auth?.hydrating, applySession, logout]);
+
+  useEffect(() => {
+    const onAuthFailed = () => {
+      logout();
+    };
+    window.addEventListener('hostel:auth-failed', onAuthFailed);
+    return () => window.removeEventListener('hostel:auth-failed', onAuthFailed);
+  }, [logout]);
 
   const token     = getStoredToken();
   const isLoggedIn = !!token && !!auth?.role && !auth?.hydrating;

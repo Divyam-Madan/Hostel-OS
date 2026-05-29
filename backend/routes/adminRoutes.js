@@ -6,6 +6,10 @@ import {
   adminLogin,
   verifyAdminOtp,
   adminProfile,
+  patchAdminProfile,
+  adminForgotPassword,
+  adminResetPasswordHandler,
+  adminChangePasswordHandler,
   complaintSummary,
   foodSummary,
   listAlerts,
@@ -23,6 +27,14 @@ import {
   getStudents,
   getOneStudent,
 } from '../controllers/adminAnalyticsController.js';
+import { getAdminFees, updateFeeStatus } from '../controllers/feeController.js';
+import {
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  listParticipants,
+  getEventAnalytics,
+} from '../controllers/adminEventController.js';
 
 const router = Router();
 
@@ -30,15 +42,26 @@ router.post('/signup', authLimiter, adminSignup);
 router.post('/login', authLimiter, adminLogin);
 router.post('/verify-otp', otpLimiter, verifyAdminOtp);
 router.get('/profile', authenticate, requireAdmin, adminProfile);
+router.patch('/profile', authenticate, requireAdmin, patchAdminProfile);
+router.post('/forgot-password', otpLimiter, adminForgotPassword);
+router.post('/reset-password', adminResetPasswordHandler);
 
 router.use(authenticate, requireAdmin);
+router.post('/change-password', adminChangePasswordHandler);
 
 router.get('/dashboard', getDashboard);
 router.get('/stats', getStats);
 router.get('/complaints', getComplaints);
 router.delete('/complaints/:id', removeComplaint);
 router.get('/events', getEvents);
+router.post('/events', createEvent);
+router.put('/events/:id', updateEvent);
+router.delete('/events/:id', deleteEvent);
+router.get('/events/:id/participants', listParticipants);
+router.get('/events/:id/analytics', getEventAnalytics);
 router.get('/feedback-analysis', getFeedbackAnalysis);
+router.get('/fees', getAdminFees);
+router.patch('/fees/:id/status', updateFeeStatus);
 router.get('/wellbeing', getWellbeing);
 router.get('/students', getStudents);
 router.get('/students/:id', getOneStudent);

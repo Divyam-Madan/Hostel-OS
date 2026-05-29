@@ -5,9 +5,11 @@ const adminSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true, minlength: 1, maxlength: 120 },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     password: { type: String, required: true, select: false },
+    passwordChangedAt: { type: Date, default: null },
     employeeId: { type: String, required: true, unique: true, uppercase: true, trim: true },
     otp: { type: String, select: false },
     otpExpiry: { type: Date },
+    settings: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );

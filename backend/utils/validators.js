@@ -36,3 +36,71 @@ export function assertOtp(otp) {
   }
   return s;
 }
+
+/** Sanitize and validate leave reason/notes: trim, enforce length, escape HTML */
+export function sanitizeReason(reason, minLen = 6, maxLen = 500) {
+  if (!reason || typeof reason !== 'string') {
+    const e = new Error('Reason must be a non-empty string');
+    e.statusCode = 400;
+    throw e;
+  }
+  const trimmed = reason.trim();
+  if (trimmed.length < minLen || trimmed.length > maxLen) {
+    const e = new Error(`Reason must be between ${minLen} and ${maxLen} characters`);
+    e.statusCode = 400;
+    throw e;
+  }
+  // Escape HTML-like characters to prevent injection
+  return trimmed
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+/** Validate ISO date string and return Date object */
+export function parseAndValidateDate(dateStr, fieldName = 'date') {
+  if (!dateStr || typeof dateStr !== 'string') {
+    const e = new Error(`${fieldName} must be a valid ISO date string`);
+    e.statusCode = 400;
+    throw e;
+  }
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) {
+    const e = new Error(`${fieldName} is not a valid date`);
+    e.statusCode = 400;
+    throw e;
+  }
+  // Ensure date is not in the past (allow today)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (date < today) {
+    const e = new Error(`${fieldName} cannot be in the past`);
+    e.statusCode = 400;
+    throw e;
+  }
+  return date;
+}
+
+/** Validate parent consent value against allowed options */
+export function validateParentConsent(consent) {
+  const allowed = ['Parent informed via phone', 'Parent will call warden', 'Medical emergency — self-certified'];
+  if (!consent || !allowed.includes(consent)) {
+    const e = new Error('Invalid parent consent option');
+    e.statusCode = 400;
+    throw e;
+  }
+  return consent;
+}
+
+/** Validate outing return time */
+export function validateReturnTime(returnTime) {
+  const allowed = ['Before 8 PM', 'Before 9 PM', 'Before 10 PM', 'Before 10:30 PM'];
+  if (!returnTime || !allowed.includes(returnTime)) {
+    const e = new Error('Invalid return time');
+    e.statusCode = 400;
+    throw e;
+  }
+  return returnTime;
+}

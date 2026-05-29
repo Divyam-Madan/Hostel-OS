@@ -1,11 +1,28 @@
 // src/App.jsx
 import { useState, Suspense, lazy, useEffect } from 'react';
-import { io } from 'socket.io-client';
 import { useAuth } from './hooks/useAuth';
+import { ensureRealtimeSocket } from './realtime/socket';
 import Sidebar from './components/layout/Sidebar';
 import AdminSidebar from './components/admin/AdminSidebar';
 import Topbar from './components/layout/Topbar';
+import GlobalFooter from './components/layout/GlobalFooter';
 import Login from './pages/Login';
+import { ToastProvider, useToast } from './components/ui';
+
+function SessionListener() {
+  const toast = useToast();
+  useEffect(() => {
+    let shown = false;
+    const onExp = () => {
+      if (shown) return;
+      shown = true;
+      toast.error('Session expired');
+    };
+    window.addEventListener('hostel:session-expired', onExp);
+    return () => window.removeEventListener('hostel:session-expired', onExp);
+  }, [toast]);
+  return null;
+}
 
 // Lazy-load all pages for performance
 const Dashboard   = lazy(() => import('./pages/Dashboard'));
@@ -45,11 +62,26 @@ const PAGE_MAP = {
   timetable:   Timetable,
   'admin-dashboard': WardenConsole,
   'admin-complaints': WardenConsole,
+  'admin-leaves': WardenConsole,
   'admin-events': WardenConsole,
   'admin-feedback': WardenConsole,
   'admin-wellbeing': WardenConsole,
   'admin-students': WardenConsole,
+  'admin-laundry': WardenConsole,
+  'admin-timetable': WardenConsole,
 };
+
+const ADMIN_CONSOLE_PAGES = new Set([
+  'admin-dashboard',
+  'admin-complaints',
+  'admin-leaves',
+  'admin-events',
+  'admin-feedback',
+  'admin-wellbeing',
+  'admin-students',
+  'admin-laundry',
+  'admin-timetable',
+]);
 
 function PageLoader() {
   return (
@@ -62,89 +94,102 @@ function PageLoader() {
 }
 
 export default function App() {
-  const { isLoggedIn, hydrating, login, logout, role } = useAuth();
+  const { isLoggedIn, hydrating, login, logout, role, user } = useAuth();
   const [activePage, setActivePage] = useState('dashboard');
   const resolvedPage =
     role === 'admin' && !activePage.startsWith('admin-') ? 'admin-dashboard' : activePage;
 
   useEffect(() => {
     if (!isLoggedIn || hydrating) return;
-    const socket = io({ path: '/socket.io' });
-    const fire = (name) => () => window.dispatchEvent(new CustomEvent(name));
-    socket.on('complaint:update', fire('hostel:complaints'));
-    socket.on('order:update', fire('hostel:orders'));
-    socket.on('alert:new', fire('hostel:alerts'));
-    socket.on('admin:stats', fire('hostel:admin-stats'));
-    return () => socket.close();
+    const socket = ensureRealtimeSocket();
+
+    const fire = (name) => (payload) => window.dispatchEvent(new CustomEvent(name, { detail: payload }));
+    const onComplaintUpdate = fire('hostel:complaints');
+    const onOrderUpdate = fire('hostel:orders');
+    const onAlertNew = fire('hostel:alerts');
+    const onNotificationNew = fire('hostel:notifications');
+    const onEventsUpdate = fire('hostel:events');
+    const onWellbeingUpdate = fire('hostel:wellbeing');
+    const onTimetableUpdate = fire('hostel:timetable');
+    const onAdminStats = fire('hostel:admin-stats');
+    const onLostFoundUpdate = fire('hostel:lostfound');
+    const onLeaveUpdate = fire('hostel:leave-update');
+    const onLeaveNew = fire('hostel:leave-new');
+    socket.on('complaint:update', onComplaintUpdate);
+    socket.on('order:update', onOrderUpdate);
+    socket.on('alert:new', onAlertNew);
+    socket.on('notification:new', onNotificationNew);
+    socket.on('event:new', onEventsUpdate);
+    socket.on('event:update', onEventsUpdate);
+    socket.on('wellbeing:update', onWellbeingUpdate);
+    socket.on('timetable:update', onTimetableUpdate);
+    socket.on('admin:stats', onAdminStats);
+    socket.on('lostfound:update', onLostFoundUpdate);
+    socket.on('leave:update', onLeaveUpdate);
+    socket.on('leave:new', onLeaveNew);
+
+    return () => {
+      socket.off('complaint:update', onComplaintUpdate);
+      socket.off('order:update', onOrderUpdate);
+      socket.off('alert:new', onAlertNew);
+      socket.off('notification:new', onNotificationNew);
+      socket.off('event:new', onEventsUpdate);
+      socket.off('event:update', onEventsUpdate);
+      socket.off('wellbeing:update', onWellbeingUpdate);
+      socket.off('timetable:update', onTimetableUpdate);
+      socket.off('admin:stats', onAdminStats);
+      socket.off('lostfound:update', onLostFoundUpdate);
+      socket.off('leave:update', onLeaveUpdate);
+      socket.off('leave:new', onLeaveNew);
+      socket.close();
+    };
   }, [isLoggedIn, hydrating]);
 
   if (hydrating) {
     return <PageLoader />;
   }
 
-  if (!isLoggedIn) {
-    return <Login onLogin={login} />;
-  }
-
-  const PageComponent = PAGE_MAP[resolvedPage] || (role === 'admin' ? WardenConsole : Dashboard);
-
-  const isWarden = role === 'admin';
-
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: isWarden ? '#080a0f' : 'var(--bg)' }}>
-      {isWarden ? (
-        <AdminSidebar activePage={resolvedPage} onNavigate={setActivePage} onLogout={logout} />
+    <ToastProvider>
+      <SessionListener />
+      {!isLoggedIn ? (
+        <Login onLogin={login} />
       ) : (
-        <Sidebar activePage={activePage} onNavigate={setActivePage} onLogout={logout} role={role} />
+        (() => {
+          const PageComponent = PAGE_MAP[resolvedPage] || (role === 'admin' ? WardenConsole : Dashboard);
+          const isWarden = role === 'admin';
+          const showWardenConsole = isWarden && ADMIN_CONSOLE_PAGES.has(resolvedPage);
+
+          return (
+            <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'linear-gradient(180deg, rgba(255,255,255,0.02), transparent 18%), linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%)' }}>
+                {showWardenConsole ? (
+                <AdminSidebar activePage={resolvedPage} onNavigate={setActivePage} onLogout={logout} />
+              ) : (
+                <Sidebar activePage={activePage} onNavigate={setActivePage} onLogout={logout} role={role} />
+              )}
+
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+                <Topbar activePage={showWardenConsole ? resolvedPage : activePage} onLogout={logout} onNavigate={setActivePage} role={role} user={user} />
+
+                <main style={{ flex: 1, overflowY: 'auto', background: 'linear-gradient(180deg, rgba(255,255,255,0.02), transparent 18%), linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
+                    <div style={{ flex: 1, minHeight: 0 }}>
+                      <Suspense fallback={<PageLoader />}>
+                        {showWardenConsole ? (
+                          <WardenConsole activePage={resolvedPage} />
+                        ) : (
+                          <PageComponent onNavigate={setActivePage} role={role} />
+                        )}
+                      </Suspense>
+                    </div>
+                    <GlobalFooter />
+                  </div>
+                </main>
+              </div>
+            </div>
+          );
+        })()
       )}
-
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-        {isWarden ? (
-          <header
-            style={{
-              height: 52,
-              borderBottom: '1px solid rgba(99,102,241,0.15)',
-              display: 'flex',
-              alignItems: 'center',
-              padding: '0 22px',
-              background: 'rgba(12,14,20,0.95)',
-              flexShrink: 0,
-            }}
-          >
-            <h1 style={{ fontFamily: 'var(--font2)', fontWeight: 600, fontSize: 15, color: '#e2e8f0', flex: 1, margin: 0 }}>
-              Warden · Hostel intelligence
-            </h1>
-            <button
-              type="button"
-              onClick={logout}
-              style={{
-                padding: '8px 14px',
-                borderRadius: 8,
-                border: '1px solid rgba(248,113,113,0.35)',
-                background: 'transparent',
-                color: '#fca5a5',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Sign out
-            </button>
-          </header>
-        ) : (
-          <Topbar activePage={activePage} onLogout={logout} onNavigate={setActivePage} />
-        )}
-
-        <main style={{ flex: 1, overflowY: 'auto', background: isWarden ? '#080a0f' : 'var(--bg)' }}>
-          <Suspense fallback={<PageLoader />}>
-            {isWarden ? (
-              <WardenConsole activePage={resolvedPage} />
-            ) : (
-              <PageComponent onNavigate={setActivePage} role={role} />
-            )}
-          </Suspense>
-        </main>
-      </div>
-    </div>
+    </ToastProvider>
   );
 }

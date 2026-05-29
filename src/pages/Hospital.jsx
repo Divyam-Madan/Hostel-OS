@@ -1,12 +1,13 @@
 // src/pages/Hospital.jsx
 import { useState } from 'react';
-import { Card, SectionHeader, GlowCard, Field, Modal } from '../components/ui';
+import { Card, SectionHeader, GlowCard, Field, Modal, useToast } from '../components/ui';
 import { hospitalData } from '../data/mockData';
 import { api } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 
 export default function Hospital() {
   const { role } = useAuth();
+  const toast = useToast();
   const [ambulanceOpen, setAmbulanceOpen] = useState(false);
   const [ambulanceSent, setAmbulanceSent] = useState(false);
   const [referralOpen, setReferralOpen] = useState(false);
@@ -222,7 +223,7 @@ export default function Hospital() {
                 setIncidentRef(data.alert?.id || '');
                 setIncidentDone(true);
               } catch (e) {
-                alert(e.message || 'Failed to submit');
+                toast.error(e.message || 'Failed to submit');
               } finally {
                 setIncSubmitting(false);
               }

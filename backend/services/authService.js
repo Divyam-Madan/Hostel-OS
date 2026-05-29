@@ -4,6 +4,7 @@ import { env } from '../config/env.js';
 import { User } from '../models/User.js';
 import { assertEmail, assertPassword, assertUsername, assertOtp } from '../utils/validators.js';
 import { issueOtp, consumeOtp } from './otpService.js';
+import { log } from '../utils/logger.js';
 
 function signToken(payload) {
   return jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
@@ -86,9 +87,18 @@ export async function login({ identifier, password }) {
     return { token: buildAdminToken(), role: 'admin', user: adminPublic() };
   }
 
-  const user =
-    (await User.findOne({ username: id }).select('+password')) ||
-    (await User.findOne({ email: id.toLowerCase() }).select('+password'));
+  // Consolidate lookup into a single query and always fetch password
+  const query = { $or: [{ username: id }, { email: id.toLowerCase() }] };
+  const user = await User.findOne(query).select('+password');
+
+  // If debug enabled, log lookup result (never log raw password)
+  if (process.env.DEBUG_AUTH === 'true' || env.DEBUG_AUTH) {
+    try {
+      log.info('AUTH DEBUG: login attempt', { identifier: id, found: !!user, userId: user?._id?.toString?.() });
+    } catch (err) {
+      /* ignore logging failures */
+    }
+  }
 
   if (!user) {
     const e = new Error('Invalid credentials');
@@ -98,6 +108,9 @@ export async function login({ identifier, password }) {
 
   const ok = await bcrypt.compare(pwd, user.password);
   if (!ok) {
+    if (process.env.DEBUG_AUTH === 'true' || env.DEBUG_AUTH) {
+      log.warn('AUTH DEBUG: bcrypt.compare failed for user', { userId: user._id?.toString?.(), identifier: id });
+    }
     const e = new Error('Invalid credentials');
     e.statusCode = 401;
     throw e;
@@ -131,6 +144,7 @@ export async function resetPassword({ email, otp, newPassword }) {
     throw e;
   }
   user.password = await bcrypt.hash(pwd, 12);
+  user.passwordChangedAt = new Date();
   await user.save();
   return { message: 'Password updated. You can sign in now.' };
 }
