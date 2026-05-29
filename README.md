@@ -1,145 +1,625 @@
-# 🏨 HostelOS — Smart Hostel Information & Management Portal v2.0
+# 🏨 HostelOS — AI-Powered Smart Hostel Management Ecosystem
 
-**SOLVE-A-THON 2026 · Theme 1 · PS02**
+<div align="center">
 
-A premium, fully functional React + Vite hostel management platform — dark theme, smooth animations, persistent auth, 17 feature modules.
+### Intelligent • Real-Time • Secure • Student-Centric
 
----
+A production-style MERN-stack hostel operating system built to modernize hostel infrastructure through automation, real-time communication, analytics, AI-assisted insights, and role-based digital workflows.
 
-## 🚀 Quick Start
+**Designed, engineered, and developed by Divyam Madan**
 
-```bash
-unzip hostel-os.zip
-cd hostel-os
-npm install
-npm run dev          # → http://localhost:5173
-npm run build        # production build
-```
+🌐 Live Demo: https://hostel-os.netlify.app
 
-**Demo Login:** any email + any password. Switch between **Student** and **Admin** roles.
-Session persists for 24 hours across page refreshes via localStorage.
+⚠️ **Admin/Warden authentication includes OTP verification after password validation.**
+
+</div>
 
 ---
 
-## ✨ What's New in v2.0
+# 📖 Overview
 
-| Feature | Details |
-|---------|---------|
-| **Persistent Auth** | Login survives page refresh (24h session via `useAuth` hook) |
-| **Logout** | Works from sidebar AND topbar — clears localStorage session |
-| **Lazy Loading** | All 17 pages lazy-loaded for fast initial render |
-| **macOS Dock** | Animated magnification dock on Dashboard |
-| **Today's Timeline** | Agenda panel on Dashboard with live progress |
-| **Timetable Page** | Weekly class schedule, missed class alerts, day tabs |
-| **OTP Roommate Verify** | 6-digit OTP flow in Room Allotment |
-| **Laundry Token** | Booking generates a printable token with ID |
-| **Camera Attendance** | GPS + camera capture mock in Attendance |
-| **Image Upload** | Lost & Found supports photo + location tag |
-| **Team Creation** | Events page: create/join hackathon teams |
-| **Gym Slot Booking** | Paid/Free toggle + day/session/slot picker |
-| **Mess Caterer UI** | Switch caterer, room service, nutrition radar chart |
-| **Incident Report** | Hospital page: structured incident form |
-| **Admin Heatmap** | Activity heatmap by day + hour |
-| **Admin Fees Tab** | Monthly fee collection bar chart |
-| **Admin Insights** | Top compliance room, most complaints, best mess day |
-| **Search & Filter** | Admin student table: live search + year filter |
+HostelOS is a next-generation intelligent hostel operating system designed to digitize, automate, secure, and optimize every major aspect of hostel life.
 
----
+The project was built to address a common problem seen across many educational institutions: hostel management systems are often fragmented, outdated, disconnected, and highly dependent on manual processes.
 
-## 📁 Project Structure
+Students struggle with visibility.
 
-```
-hostel-os/
-├── src/
-│   ├── components/
-│   │   ├── layout/
-│   │   │   ├── Sidebar.jsx       # Collapsible nav + logout
-│   │   │   └── Topbar.jsx        # Notifications + logout
-│   │   └── ui/
-│   │       └── index.jsx         # 15+ shared components
-│   │
-│   ├── hooks/
-│   │   ├── useAuth.js            # Persistent auth (localStorage)
-│   │   └── useLocalStorage.js    # Generic persisted state
-│   │
-│   ├── utils/
-│   │   └── index.js              # fmt, fmtDate, greet, randomId…
-│   │
-│   ├── data/
-│   │   └── mockData.js           # All data — swap with API calls
-│   │
-│   ├── pages/
-│   │   ├── Login.jsx             # Animated split-screen login
-│   │   ├── Dashboard.jsx         # macOS dock + charts + timeline
-│   │   ├── MyInfo.jsx            # Profile + rank + credentials
-│   │   ├── Attendance.jsx        # GPS + camera mock flow
-│   │   ├── EntryExit.jsx         # Color-coded logs
-│   │   ├── Room.jsx              # OTP verify + swap portal
-│   │   ├── Timetable.jsx         # NEW: Schedule + missed alerts
-│   │   ├── Mess.jsx              # QR + menu + radar + caterer
-│   │   ├── Laundry.jsx           # Paid/free + token generation
-│   │   ├── Complaints.jsx        # Categories + analytics
-│   │   ├── Leave.jsx             # Leave/outing apply
-│   │   ├── Fees.jsx              # Payment + history
-│   │   ├── LostFound.jsx         # Image upload + location tag
-│   │   ├── Events.jsx            # Register + team creation
-│   │   ├── Gym.jsx               # Slot booking + schedule
-│   │   ├── Counselling.jsx       # Anonymous + slot picker
-│   │   ├── Hospital.jsx          # Ambulance + incident report
-│   │   └── Admin.jsx             # 6-tab dashboard + heatmap
-│   │
-│   ├── App.jsx                   # Lazy routing + auth gate
-│   ├── main.jsx                  # Entry point
-│   └── index.css                 # Dark design system
-│
-├── index.html
-├── vite.config.js
-└── package.json
-```
+Wardens struggle with coordination.
+
+Complaints disappear into spreadsheets.
+
+Mess feedback goes unread.
+
+Attendance systems are inefficient.
+
+Events remain disconnected.
+
+Communication is delayed.
+
+And almost no meaningful analytics exist.
+
+HostelOS was built as a unified digital ecosystem that brings together:
+
+* Student services
+* Hostel operations
+* Administrative workflows
+* Analytics
+* Real-time communication
+* AI-powered insights
+* Attendance monitoring
+* Event ecosystems
+* Counselling systems
+* Financial tracking
+
+into a single platform.
+
+The goal is not simply to create another dashboard.
+
+The goal is to create a complete operating system for hostel life.
 
 ---
 
-## 🎨 Design System
+# 🚀 Vision
 
-**Colors** (change `--accent` in `index.css` to rebrand):
-- Primary: `#6366f1` (Indigo)
-- Purple: `#a855f7`
-- Green/Amber/Red for semantic status
+HostelOS reimagines hostels as intelligent digital ecosystems.
 
-**Fonts:** DM Sans (body) + Space Grotesk (headings)
+Instead of isolated modules and manual workflows, every major hostel operation becomes connected through a centralized real-time platform.
 
-**Components** (`src/components/ui/index.jsx`):
-`StatCard` `Badge` `StatusBadge` `PriorityBadge` `ProgressBar`
-`Avatar` `StarRating` `Card` `Modal` `Field` `EmptyState`
-`SectionHeader` `TimelineItem` `ChipFilter` `GlowCard` `InfoRow` `IconBox`
+The platform attempts to provide:
 
----
+* Better student experiences
+* Faster administrative workflows
+* Improved transparency
+* Data-driven decision making
+* Real-time operational awareness
+* Intelligent hostel analytics
+* Scalable infrastructure
 
-## 🔌 Backend Integration Checklist
-
-- [ ] Replace `mockData.js` exports with `fetch`/`axios` API calls
-- [ ] Connect `useAuth.js` to real JWT login endpoint
-- [ ] Add React Query or SWR for caching + loading states
-- [ ] Real GPS geofence check in `Attendance.jsx`
-- [ ] Real camera/WebRTC in `Attendance.jsx`
-- [ ] OTP verification via SMS gateway in `Room.jsx`
-- [ ] File upload to S3/CDN in `LostFound.jsx`
-- [ ] Payment gateway (Razorpay) in `Fees.jsx`
-- [ ] Push notifications for leave approvals / complaint updates
-- [ ] WebSocket for live admin activity feed
+for both students and hostel management teams.
 
 ---
 
-## 📦 Tech Stack
+# 🧠 Core Engineering Architecture
 
-| Tool | Purpose |
-|------|---------|
-| React 19 + Vite 8 | Framework + build |
-| Recharts | All charts |
-| Lucide React | Icons |
-| Framer Motion | Available for enhanced animations |
-| date-fns | Date formatting |
+## Frontend
+
+Built using:
+
+* React
+* Vite
+* React Router
+* Context API
+* Modular Component Architecture
+* Responsive Layout Systems
+* Dynamic Theme Infrastructure
+* Real-Time Socket Synchronization
+
+Features:
+
+* Student Dashboard
+* Warden Dashboard
+* Dynamic Routing
+* Protected Routes
+* Lazy Loaded Pages
+* Toast Notifications
+* Theme Persistence
+* Responsive Design
+* Multi-Theme Support
 
 ---
 
-*Built for SOLVE-A-THON 2026 · Anthropic Claude*
+## Backend
+
+Built using:
+
+* Node.js
+* Express.js
+* REST APIs
+* JWT Authentication
+* SMTP Infrastructure
+* Role-Based Middleware
+* Socket.IO
+* Centralized Error Handling
+
+Features:
+
+* Secure Authentication
+* OTP Verification
+* Role-Based Access Control
+* Notification Services
+* Analytics Engines
+* AI Integrations
+* Search Infrastructure
+* Real-Time Broadcasting
+
+---
+
+## Database
+
+Powered by:
+
+* MongoDB Atlas
+
+Database Architecture Includes:
+
+* User Schemas
+* Admin Schemas
+* Complaint Models
+* Event Models
+* Team Models
+* Laundry Models
+* Leave Models
+* Fee Models
+* Wellbeing Models
+* Lost & Found Models
+* Notification Models
+* Timetable Models
+* Analytics Cache Models
+
+---
+
+# 🔐 Authentication & Security System
+
+HostelOS implements a multi-layer secure authentication architecture.
+
+---
+
+## 👨‍🎓 Student Authentication
+
+Students can:
+
+* Register accounts
+* Login securely
+* Verify email addresses
+* Recover passwords using OTP
+* Update passwords
+* Maintain secure sessions
+* Access protected dashboards
+
+---
+
+## 👨‍💼 Warden / Admin Authentication
+
+Administrators use:
+
+* Employee ID login
+* Password authentication
+* OTP verification
+* Role-based dashboard access
+* Administrative privileges
+* Protected management routes
+
+---
+
+## Security Features
+
+Implemented security measures include:
+
+* JWT Authentication
+* Password Hashing
+* OTP Verification
+* SMTP Email Validation
+* Session Security
+* Role-Based Middleware
+* Protected APIs
+* Request Validation
+* Rate Limiting
+* Authentication Guards
+* Token Expiration Handling
+
+---
+
+# 📡 Real-Time Infrastructure
+
+One of the most advanced aspects of HostelOS is its real-time ecosystem.
+
+Using Socket.IO, HostelOS behaves more like an operating system than a traditional CRUD application.
+
+Real-time capabilities include:
+
+* Live dashboard refreshes
+* Instant complaint updates
+* Real-time event participation counts
+* Live attendance synchronization
+* Notification broadcasting
+* Administrative monitoring
+* Dynamic analytics refreshes
+* Student activity feeds
+* Instant operational updates
+
+---
+
+# 📊 Advanced Analytics Dashboard
+
+HostelOS includes a comprehensive administrative intelligence system.
+
+Administrators receive visibility into:
+
+* Complaint trends
+* Student activity
+* Leave statistics
+* Event participation
+* Fee collections
+* Attendance metrics
+* Laundry utilization
+* Wellbeing trends
+* Mess feedback analytics
+* Operational KPIs
+
+Visualization systems include:
+
+* Bar Charts
+* Pie Charts
+* Donut Charts
+* Trend Graphs
+* Activity Metrics
+* Summary Cards
+* Comparative Analytics
+
+---
+
+# 📬 Smart Complaint Management
+
+Students can raise complaints related to:
+
+* WiFi
+* Electricity
+* Water Supply
+* Furniture Damage
+* Cleaning
+* Noise Issues
+* Pest Control
+* Maintenance
+* General Infrastructure
+
+Administrative Features:
+
+* Complaint Filtering
+* Search
+* Status Tracking
+* Resolution Monitoring
+* Category Analytics
+* Priority Management
+* Real-Time Updates
+
+---
+
+# 🍽️ AI-Powered Mess Intelligence System
+
+HostelOS contains a dedicated mess feedback ecosystem.
+
+Students can submit meal-specific feedback for:
+
+* Breakfast
+* Lunch
+* Snacks
+* Dinner
+
+AI processing enables:
+
+* Sentiment Analysis
+* Trend Detection
+* Feedback Summarization
+* Concern Identification
+* Satisfaction Monitoring
+* Positive Feedback Recognition
+
+Integrated Gemini-based intelligence helps administrators identify operational improvements.
+
+---
+
+# 📅 Timetable Management System
+
+Students can:
+
+* View academic schedules
+* Access updated timetables
+* Track class information
+
+Administrators can:
+
+* Create schedules
+* Edit timetables
+* Update entries
+* Manage timetable records
+
+---
+
+# 🎟️ Events & Hackathon Ecosystem
+
+HostelOS includes a complete event management infrastructure.
+
+Students can:
+
+* Register for events
+* Join hackathons
+* Create teams
+* Track participation
+* Monitor registrations
+
+Administrators can:
+
+* Create Events
+* Delete Events
+* Manage Registrations
+* Track Participation
+* View Analytics
+
+Supported Features:
+
+* Team Registration
+* Seat Tracking
+* Registration Monitoring
+* Live Event Updates
+
+---
+
+# 👥 Team Formation System
+
+Hackathon and event workflows include:
+
+* Team Creation
+* Team Joining
+* Team Management
+* Member Tracking
+* Participation Analytics
+
+---
+
+# 🧺 Smart Laundry Management
+
+The platform includes a complete laundry booking infrastructure.
+
+Features:
+
+* Slot Booking
+* Live Availability Tracking
+* Booking Confirmation
+* Occupancy Monitoring
+* Schedule Visibility
+* Usage Analytics
+
+---
+
+# 📦 Lost & Found Ecosystem
+
+Students can:
+
+* Report Lost Items
+* Report Found Items
+* Upload Images
+* Add Descriptions
+* Add Locations
+* Contact Owners
+* Claim Items
+
+Administrative Features:
+
+* Item Monitoring
+* Claim Tracking
+* Analytics Integration
+* Category Management
+
+---
+
+# 🚪 Leave & Outing Management
+
+Students can:
+
+* Submit Leave Requests
+* Request Outings
+* Track Approval Status
+* View Request History
+
+Administrators can:
+
+* Approve Requests
+* Reject Requests
+* Monitor Trends
+* Analyze Student Movement Patterns
+
+---
+
+# 🏥 Student Wellbeing & Counselling Portal
+
+A privacy-focused wellbeing ecosystem.
+
+Students can:
+
+* Book Counselling Sessions
+* Submit Wellbeing Logs
+* Schedule Support Visits
+* Track Stress Levels
+* Request Assistance
+
+Administrators can:
+
+* Monitor Trends
+* View Aggregated Analytics
+* Manage Sessions
+* Track Support Demand
+
+---
+
+# 🏨 Hostel Healthcare & Emergency Support
+
+HostelOS includes healthcare support workflows.
+
+Features include:
+
+* Emergency Reporting
+* Medical Assistance Requests
+* Health Monitoring Interfaces
+* Student Care Workflows
+
+---
+
+# 💳 Smart Fee Management System
+
+Students can:
+
+* Track Fee Status
+* View Payment History
+* Monitor Dues
+
+Administrators can:
+
+* Track Collections
+* Monitor Pending Fees
+* Analyze Revenue Metrics
+* Generate Financial Insights
+
+---
+
+# 🔔 Notification Infrastructure
+
+HostelOS includes a centralized notification ecosystem.
+
+Supports:
+
+* Real-Time Notifications
+* Dashboard Alerts
+* Event Announcements
+* Complaint Updates
+* Administrative Broadcasts
+* System Messages
+
+---
+
+# 🔎 Global Search System
+
+Role-aware intelligent search functionality enables users to search across:
+
+* Students
+* Events
+* Timetables
+* Complaints
+* Laundry
+* Leaves
+* Fees
+* Lost & Found
+* Wellbeing Records
+
+Search results are dynamically routed based on role permissions.
+
+---
+
+# 🎨 Modern UI / UX System
+
+HostelOS focuses heavily on experience design.
+
+Features include:
+
+* Glassmorphism Effects
+* Dynamic Themes
+* Sunset Dark Theme
+* Morning Cream Theme
+* Rose Quartz Theme
+* Theme Persistence
+* Responsive Layouts
+* Accessibility-Oriented Contrast
+* Real-Time UI Refreshes
+* Animated Interactions
+
+---
+
+# ⚙️ Engineering Challenges Solved
+
+Major engineering challenges included:
+
+* Socket Synchronization
+* Real-Time State Management
+* Authentication Architecture
+* OTP Infrastructure
+* MongoDB Data Modeling
+* Route Protection
+* Role Separation
+* Dashboard Synchronization
+* Search Index Logic
+* Image Upload Handling
+* Notification Architecture
+* Analytics Aggregation
+* Live Updates
+* Session Expiration Handling
+* Middleware Security
+* Deployment Configuration
+
+---
+
+# 🛠️ Technology Stack
+
+Frontend:
+
+* React
+* Vite
+* JavaScript
+* CSS
+* Socket.IO Client
+* Recharts
+
+Backend:
+
+* Node.js
+* Express.js
+* Socket.IO
+* JWT
+* Nodemailer
+
+Database:
+
+* MongoDB Atlas
+
+AI:
+
+* Google Gemini API
+
+Infrastructure:
+
+* Netlify
+* Railway / Render
+* GitHub
+
+---
+
+# 🌍 Why HostelOS Matters
+
+HostelOS is not merely a hostel dashboard.
+
+It represents an attempt to redesign hostel infrastructure using modern software engineering principles.
+
+The platform combines:
+
+* Full-Stack Development
+* Systems Thinking
+* Real-Time Computing
+* Analytics Engineering
+* AI Integration
+* Human-Centered Design
+* Security Engineering
+* Scalable Architecture
+
+into one cohesive ecosystem.
+
+---
+
+# 👨‍💻 Developer
+
+### Divyam Madan
+
+HostelOS began as a simple concept and evolved into a large-scale engineering project involving months of feature development, architecture redesign, debugging, analytics implementation, real-time infrastructure integration, security hardening, and user experience refinement.
+
+Every major system, architecture decision, feature expansion, redesign iteration, integration workflow, and deployment pipeline present in the current version of HostelOS was engineered and developed by Divyam Madan.
+
+---
+
+# 📬 Connect
+
+GitHub: https://github.com/Divyam-Madan
+
+LinkedIn: [Add your LinkedIn URL](https://www.linkedin.com/in/divyam-madan/)
+
+Email: [divyam.madan.6106@gmail.com](mailto:divyam.madan.6106@gmail.com)
+
+---
+
+### ⭐ If you found HostelOS interesting, consider starring the repository.
