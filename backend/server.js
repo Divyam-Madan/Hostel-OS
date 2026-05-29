@@ -13,6 +13,7 @@ import { connectDB } from './config/db.js';
 import { log } from './utils/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { setSocketIO } from './services/socketService.js';
+import { initializeEmailDiagnostics } from './services/emailService.js';
 
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
@@ -33,6 +34,7 @@ import searchRoutes from './routes/searchRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 
 const app = express();
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isDev = env.NODE_ENV !== 'production';
@@ -212,6 +214,8 @@ async function start() {
       process.exit(1);
     }
   }
+
+  await initializeEmailDiagnostics();
 
   for (let attempt = 0; attempt < maxPortAttempts; attempt += 1) {
     try {

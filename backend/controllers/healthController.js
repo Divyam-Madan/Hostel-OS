@@ -1,6 +1,6 @@
 import { User } from '../models/User.js';
 import { Alert } from '../models/Alert.js';
-import { sendHealthReportEmail } from '../services/emailService.js';
+import { getEmailHealthStatus, sendHealthReportEmail } from '../services/emailService.js';
 import { env } from '../config/env.js';
 import { emitAlertNew } from '../services/socketService.js';
 
@@ -44,4 +44,8 @@ export async function reportHealthIssue(req, res, next) {
   } catch (e) {
     next(e);
   }
+}
+
+export async function getEmailHealth(_req, res) {
+  res.json(getEmailHealthStatus());
 }

@@ -82,6 +82,20 @@ export async function sendEmployeeIdMail(email, employeeId, name) {
   await sendMail({ to: email, subject, text });
 }
 
+function buildRecoveryQuery({ email, employeeId }) {
+  const em = email ? assertEmail(email) : null;
+  const emp = employeeId ? String(employeeId).trim().toUpperCase() : null;
+  if (!em && !emp) {
+    const e = new Error('Email is required');
+    e.statusCode = 400;
+    throw e;
+  }
+  if (em) {
+    return { query: { email: em } };
+  }
+  return { query: { employeeId: emp } };
+}
+
 export async function adminSignupRequest({ name, email, password }) {
   const n = assertName(name);
   const em = assertEmail(email);
@@ -168,9 +182,8 @@ export async function adminVerifyOtpAndToken({ employeeId, otp }) {
 }
 
 export async function adminForgotPasswordRequest({ email, employeeId }) {
-  const em = email ? assertEmail(email) : null;
-  const emp = employeeId ? String(employeeId).trim().toUpperCase() : null;
-  const admin = await Admin.findOne({ $or: [em ? { email: em } : null, emp ? { employeeId: emp } : null].filter(Boolean) }).select('+otp');
+  const { query } = buildRecoveryQuery({ email, employeeId });
+  const admin = await Admin.findOne(query).select('+otp');
   if (!admin) {
     return { message: 'If an admin account exists, an OTP was sent' };
   }
@@ -179,11 +192,10 @@ export async function adminForgotPasswordRequest({ email, employeeId }) {
 }
 
 export async function adminResetPassword({ email, employeeId, otp, newPassword }) {
-  const em = email ? assertEmail(email) : null;
-  const emp = employeeId ? String(employeeId).trim().toUpperCase() : null;
+  const { query } = buildRecoveryQuery({ email, employeeId });
   const code = assertOtp(otp);
   const pwd = assertPassword(newPassword);
-  const admin = await Admin.findOne({ $or: [em ? { email: em } : null, emp ? { employeeId: emp } : null].filter(Boolean) }).select('+password +otp +otpExpiry');
+  const admin = await Admin.findOne(query).select('+password +otp +otpExpiry');
   if (!admin || !admin.otp || !admin.otpExpiry) {
     const e = new Error('Invalid or expired OTP');
     e.statusCode = 400;
@@ -201,6 +213,15 @@ export async function adminResetPassword({ email, employeeId, otp, newPassword }
   admin.otpExpiry = undefined;
   await admin.save();
   return { message: 'Password updated. You can sign in now.' };
+}
+
+export async function recoverEmployeeIdRequest({ email }) {
+  const em = assertEmail(email);
+  const admin = await Admin.findOne({ email: em });
+  if (admin) {
+    await sendEmployeeIdMail(admin.email, admin.employeeId, admin.name);
+  }
+  return { message: 'If an account exists, recovery instructions have been sent.' };
 }
 
 export async function adminChangePassword(adminDoc, currentPassword, newPassword) {

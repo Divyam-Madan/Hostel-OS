@@ -8,6 +8,7 @@ import {
   adminProfile,
   patchAdminProfile,
   adminForgotPassword,
+  recoverEmployeeId,
   adminResetPasswordHandler,
   adminChangePasswordHandler,
   complaintSummary,
@@ -43,6 +44,7 @@ router.post('/login', authLimiter, adminLogin);
 router.post('/verify-otp', otpLimiter, verifyAdminOtp);
 router.get('/profile', authenticate, requireAdmin, adminProfile);
 router.patch('/profile', authenticate, requireAdmin, patchAdminProfile);
+router.post('/recover-employee-id', otpLimiter, recoverEmployeeId);
 router.post('/forgot-password', otpLimiter, adminForgotPassword);
 router.post('/reset-password', adminResetPasswordHandler);
 

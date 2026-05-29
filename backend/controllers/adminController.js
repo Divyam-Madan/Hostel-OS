@@ -13,6 +13,7 @@ import {
   adminForgotPasswordRequest,
   adminResetPassword,
   adminChangePassword,
+  recoverEmployeeIdRequest,
 } from '../services/adminAuthService.js';
 import { listNotifications, markNotificationRead } from '../services/notificationService.js';
 
@@ -259,6 +260,15 @@ export async function patchAdminProfile(req, res, next) {
 export async function adminForgotPassword(req, res, next) {
   try {
     const result = await adminForgotPasswordRequest(req.body);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function recoverEmployeeId(req, res, next) {
+  try {
+    const result = await recoverEmployeeIdRequest(req.body);
     res.json({ success: true, ...result });
   } catch (e) {
     next(e);
