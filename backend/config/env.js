@@ -10,12 +10,7 @@ export const env = {
   JWT_SECRET: process.env.JWT_SECRET || 'dev-only-change-me',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
 
-  // Nodemailer (optional in dev — OTP logged to console if unset)
-  SMTP_HOST: process.env.SMTP_HOST,
-  SMTP_PORT: process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587,
-  SMTP_SECURE: process.env.SMTP_SECURE === 'true',
-  SMTP_USER: process.env.SMTP_USER,
-  SMTP_PASS: process.env.SMTP_PASS,
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
   EMAIL_FROM: process.env.EMAIL_FROM || 'HostelOS <noreply@hostelos.local>',
 
   HEALTH_CENTER_EMAIL: process.env.HEALTH_CENTER_EMAIL || 'health@college.edu',

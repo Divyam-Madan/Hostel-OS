@@ -1,37 +1,44 @@
-import nodemailer from 'nodemailer';
-import dns from 'dns/promises';
+import { Resend } from 'resend';
 import { env } from '../config/env.js';
 import { log } from '../utils/logger.js';
 
-let transporter = null;
-let smtpVerified = false;
-let smtpInitStarted = false;
-let resolvedSmtpTarget = null;
+const resend = env.RESEND_API_KEY ? new Resend(env.RESEND_API_KEY) : null;
 
 function hasEnvValue(name) {
   return Object.prototype.hasOwnProperty.call(process.env, name) && String(process.env[name] || '').trim() !== '';
 }
 
-function getSmtpStatus() {
-  const hostPresent = hasEnvValue('SMTP_HOST');
-  const portPresent = hasEnvValue('SMTP_PORT');
-  const securePresent = hasEnvValue('SMTP_SECURE');
-  const userPresent = hasEnvValue('SMTP_USER');
-  const passPresent = hasEnvValue('SMTP_PASS');
-  const emailFromPresent = hasEnvValue('EMAIL_FROM');
-
-  return {
-    configured: hostPresent && portPresent && securePresent && userPresent && passPresent && emailFromPresent,
-    hostPresent,
-    portPresent,
-    securePresent,
-    userPresent,
-    passPresent,
-    emailFromPresent,
-  };
+function parseSenderAddress(rawFrom) {
+  const value = String(rawFrom || '').trim();
+  const match = value.match(/<([^>]+)>/);
+  return String(match?.[1] || value).trim().toLowerCase();
 }
 
-function createSmtpError(message, code = 'SMTP_ERROR', statusCode = 503, extra = {}) {
+function isLikelyUnverifiedSender(rawFrom) {
+  const senderAddress = parseSenderAddress(rawFrom);
+  const atIndex = senderAddress.lastIndexOf('@');
+  if (atIndex <= 0 || atIndex === senderAddress.length - 1) {
+    return true;
+  }
+
+  const domain = senderAddress.slice(atIndex + 1);
+  const commonConsumerDomains = new Set([
+    'gmail.com',
+    'googlemail.com',
+    'yahoo.com',
+    'outlook.com',
+    'hotmail.com',
+    'live.com',
+    'icloud.com',
+    'aol.com',
+    'proton.me',
+    'protonmail.com',
+  ]);
+
+  return commonConsumerDomains.has(domain);
+}
+
+function createEmailError(message, code = 'EMAIL_ERROR', statusCode = 503, extra = {}) {
   const err = new Error(message);
   err.code = code;
   err.statusCode = statusCode;
@@ -39,12 +46,20 @@ function createSmtpError(message, code = 'SMTP_ERROR', statusCode = 503, extra =
   return err;
 }
 
-function classifySmtpFailure(err) {
-  const code = String(err?.code || '').toUpperCase();
-  const responseCode = Number(err?.responseCode || 0);
-  const response = String(err?.response || err?.message || '').toLowerCase();
+function getEmailProviderStatus() {
+  const emailFromConfigured = hasEnvValue('EMAIL_FROM');
+  return {
+    provider: 'resend',
+    configured: Boolean(resend && emailFromConfigured),
+    emailFromConfigured,
+  };
+}
 
-  if (code === 'EAUTH' || responseCode === 535 || response.includes('authentication') || response.includes('auth')) {
+function classifyEmailFailure(err) {
+  const code = String(err?.code || '').toUpperCase();
+  const response = String(err?.message || '').toLowerCase();
+
+  if (code === 'EAUTH' || response.includes('authentication') || response.includes('auth')) {
     return 'authentication failure';
   }
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN' || response.includes('getaddrinfo') || response.includes('dns')) {
@@ -56,165 +71,88 @@ function classifySmtpFailure(err) {
   if (code === 'EPROTO' || response.includes('tls') || response.includes('ssl') || response.includes('certificate')) {
     return 'TLS failure';
   }
-  if ([550, 552, 553, 554].includes(responseCode) || response.includes('rejected') || response.includes('relay')) {
-    return 'Gmail rejection';
+  if (response.includes('rejected') || response.includes('relay')) {
+    return 'provider rejection';
   }
-  return 'SMTP failure';
-}
-
-function logSmtpStatus() {
-  log.info('SMTP STATUS:', getSmtpStatus());
-}
-
-function logTransportConfig(target) {
-  log.info('SMTP TRANSPORTER CONFIG:', {
-    host: target.host,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
-    family: target.resolvedFamily || null,
-  });
-}
-
-async function resolveSmtpTarget() {
-  if (resolvedSmtpTarget) {
-    return resolvedSmtpTarget;
-  }
-
-  if (!env.SMTP_HOST) {
-    return null;
-  }
-
-  try {
-    const records = await dns.lookup(env.SMTP_HOST, { all: true });
-    const ipv4Records = records.filter((record) => record.family === 4);
-    const ipv6Records = records.filter((record) => record.family === 6);
-    const selected = ipv4Records[0] || records[0] || null;
-
-    log.info('SMTP DNS RESOLUTION:', {
-      host: env.SMTP_HOST,
-      ipv4: ipv4Records.map((record) => record.address),
-      ipv6: ipv6Records.map((record) => record.address),
-      selectedAddress: selected?.address || null,
-      selectedFamily: selected?.family || null,
-    });
-
-    if (!selected) {
-      return null;
-    }
-
-    resolvedSmtpTarget = {
-      host: selected.family === 4 ? selected.address : env.SMTP_HOST,
-      servername: env.SMTP_HOST,
-      family: selected.family === 4 ? 4 : undefined,
-      resolvedAddress: selected.address,
-      resolvedFamily: selected.family,
-    };
-    return resolvedSmtpTarget;
-  } catch (err) {
-    log.error('SMTP DNS resolution failure', err);
-    throw createSmtpError('Unable to resolve SMTP host', 'SMTP_DNS_RESOLUTION_FAILED', 503, { cause: err });
-  }
-}
-
-async function getTransporter() {
-  if (transporter) return transporter;
-  const status = getSmtpStatus();
-  if (!status.configured) {
-    return null;
-  }
-  const target = await resolveSmtpTarget();
-  if (!target) {
-    return null;
-  }
-  logTransportConfig(target);
-  transporter = nodemailer.createTransport({
-    host: target.host,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
-    auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
-    tls: { servername: target.servername },
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000,
-    ...(target.family ? { family: target.family } : {}),
-  });
-  return transporter;
-}
-
-async function verifyTransporter() {
-  const t = await getTransporter();
-  if (!t) {
-    smtpVerified = false;
-    logSmtpStatus();
-    return { ...getSmtpStatus(), smtpVerified };
-  }
-
-  try {
-    await t.verify();
-    smtpVerified = true;
-    log.info('SMTP verify success');
-  } catch (err) {
-    smtpVerified = false;
-    log.error(`SMTP verify failure (${classifySmtpFailure(err)})`, err);
-  }
-
-  logSmtpStatus();
-  return { ...getSmtpStatus(), smtpVerified };
+  return 'provider failure';
 }
 
 export async function initializeEmailDiagnostics() {
-  if (smtpInitStarted) {
-    return { ...getSmtpStatus(), smtpVerified };
+  const status = getEmailProviderStatus();
+  log.info('EMAIL PROVIDER STATUS:', status);
+  if (status.emailFromConfigured && isLikelyUnverifiedSender(env.EMAIL_FROM)) {
+    log.warn('EMAIL FROM STATUS: configured sender looks unverified for Resend', {
+      from: parseSenderAddress(env.EMAIL_FROM),
+      provider: 'resend',
+    });
   }
-  smtpInitStarted = true;
-  return verifyTransporter();
+  return status;
 }
 
 export function getEmailHealthStatus() {
-  const status = getSmtpStatus();
+  const status = getEmailProviderStatus();
   return {
-    smtpConfigured: status.configured,
-    emailFromConfigured: status.emailFromPresent,
-    smtpVerified,
+    provider: status.provider,
+    configured: status.configured,
+    emailFromConfigured: status.emailFromConfigured,
   };
 }
 
 export function getEmailHealthDetails() {
-  const status = getSmtpStatus();
-  return {
-    smtpConfigured: status.configured,
-    smtpVerified,
-    host: env.SMTP_HOST || null,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
-  };
+  return getEmailHealthStatus();
 }
 
 /**
- * Sends mail; fails closed when SMTP is not configured or delivery fails.
+ * Sends mail via Resend; fails closed when configuration is incomplete or delivery fails.
  */
 export async function sendMail({ to, subject, text, html }) {
-  const t = await getTransporter();
-  if (!t) {
-    const status = getSmtpStatus();
-    log.warn('SMTP send blocked: incomplete configuration', status);
-    throw createSmtpError('SMTP is not fully configured', 'SMTP_NOT_CONFIGURED', 503);
+  if (!resend) {
+    const status = getEmailProviderStatus();
+    log.warn('EMAIL PROVIDER STATUS:', status);
+    throw createEmailError('Resend is not configured', 'EMAIL_NOT_CONFIGURED', 503);
   }
   try {
-    await t.sendMail({
+    log.info('EMAIL SEND ATTEMPT:', {
+      from: env.EMAIL_FROM,
+      to,
+      subject,
+    });
+
+    const result = await resend.emails.send({
       from: env.EMAIL_FROM,
       to,
       subject,
       text,
       html: html || text.replace(/\n/g, '<br/>'),
     });
-    smtpVerified = true;
-    log.info('SMTP sendMail success');
+
+    log.info('Resend sendMail response:', {
+      data: result?.data || null,
+      error: result?.error || null,
+    });
+
+    if (result?.error) {
+      throw createEmailError(`Email delivery failed (${classifyEmailFailure(result.error)})`, 'EMAIL_SEND_FAILED', 503, {
+        cause: result.error,
+      });
+    }
+
+    if (!result?.data?.id) {
+      throw createEmailError('Email delivery failed (missing Resend response id)', 'EMAIL_SEND_FAILED', 503, {
+        cause: new Error('Missing Resend response id'),
+      });
+    }
+
+    log.info('Resend email delivered:', {
+      id: result.data.id,
+      provider: 'resend',
+    });
+
     return { sent: true };
   } catch (err) {
-    const failure = classifySmtpFailure(err);
-    log.error(`SMTP sendMail failure (${failure})`, err);
-    throw createSmtpError(`Email delivery failed (${failure})`, 'SMTP_SEND_FAILED', 503, { cause: err });
+    const failure = classifyEmailFailure(err);
+    log.error(`Resend sendMail failure (${failure})`, err);
+    throw createEmailError(`Email delivery failed (${failure})`, 'EMAIL_SEND_FAILED', 503, { cause: err });
   }
 }
 
