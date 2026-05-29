@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { authenticate, requireStudent } from '../middleware/auth.js';
-import { getEmailHealth, reportHealthIssue } from '../controllers/healthController.js';
+import { getEmailHealth, getEmailHealthDetailsHandler, reportHealthIssue } from '../controllers/healthController.js';
 
 const router = Router();
 
 router.get('/email', getEmailHealth);
+router.get('/email/details', getEmailHealthDetailsHandler);
 router.post('/report', authenticate, requireStudent, reportHealthIssue);
 
 export default router;

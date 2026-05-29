@@ -1,10 +1,12 @@
 import nodemailer from 'nodemailer';
+import dns from 'dns/promises';
 import { env } from '../config/env.js';
 import { log } from '../utils/logger.js';
 
 let transporter = null;
 let smtpVerified = false;
 let smtpInitStarted = false;
+let resolvedSmtpTarget = null;
 
 function hasEnvValue(name) {
   return Object.prototype.hasOwnProperty.call(process.env, name) && String(process.env[name] || '').trim() !== '';
@@ -64,26 +66,83 @@ function logSmtpStatus() {
   log.info('SMTP STATUS:', getSmtpStatus());
 }
 
-function getTransporter() {
+function logTransportConfig(target) {
+  log.info('SMTP TRANSPORTER CONFIG:', {
+    host: target.host,
+    port: env.SMTP_PORT,
+    secure: env.SMTP_SECURE,
+    family: target.resolvedFamily || null,
+  });
+}
+
+async function resolveSmtpTarget() {
+  if (resolvedSmtpTarget) {
+    return resolvedSmtpTarget;
+  }
+
+  if (!env.SMTP_HOST) {
+    return null;
+  }
+
+  try {
+    const records = await dns.lookup(env.SMTP_HOST, { all: true });
+    const ipv4Records = records.filter((record) => record.family === 4);
+    const ipv6Records = records.filter((record) => record.family === 6);
+    const selected = ipv4Records[0] || records[0] || null;
+
+    log.info('SMTP DNS RESOLUTION:', {
+      host: env.SMTP_HOST,
+      ipv4: ipv4Records.map((record) => record.address),
+      ipv6: ipv6Records.map((record) => record.address),
+      selectedAddress: selected?.address || null,
+      selectedFamily: selected?.family || null,
+    });
+
+    if (!selected) {
+      return null;
+    }
+
+    resolvedSmtpTarget = {
+      host: selected.family === 4 ? selected.address : env.SMTP_HOST,
+      servername: env.SMTP_HOST,
+      family: selected.family === 4 ? 4 : undefined,
+      resolvedAddress: selected.address,
+      resolvedFamily: selected.family,
+    };
+    return resolvedSmtpTarget;
+  } catch (err) {
+    log.error('SMTP DNS resolution failure', err);
+    throw createSmtpError('Unable to resolve SMTP host', 'SMTP_DNS_RESOLUTION_FAILED', 503, { cause: err });
+  }
+}
+
+async function getTransporter() {
   if (transporter) return transporter;
   const status = getSmtpStatus();
   if (!status.configured) {
     return null;
   }
+  const target = await resolveSmtpTarget();
+  if (!target) {
+    return null;
+  }
+  logTransportConfig(target);
   transporter = nodemailer.createTransport({
-    host: env.SMTP_HOST,
+    host: target.host,
     port: env.SMTP_PORT,
     secure: env.SMTP_SECURE,
     auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
+    tls: { servername: target.servername },
     connectionTimeout: 30000,
     greetingTimeout: 30000,
     socketTimeout: 30000,
+    ...(target.family ? { family: target.family } : {}),
   });
   return transporter;
 }
 
 async function verifyTransporter() {
-  const t = getTransporter();
+  const t = await getTransporter();
   if (!t) {
     smtpVerified = false;
     logSmtpStatus();
@@ -120,11 +179,22 @@ export function getEmailHealthStatus() {
   };
 }
 
+export function getEmailHealthDetails() {
+  const status = getSmtpStatus();
+  return {
+    smtpConfigured: status.configured,
+    smtpVerified,
+    host: env.SMTP_HOST || null,
+    port: env.SMTP_PORT,
+    secure: env.SMTP_SECURE,
+  };
+}
+
 /**
  * Sends mail; fails closed when SMTP is not configured or delivery fails.
  */
 export async function sendMail({ to, subject, text, html }) {
-  const t = getTransporter();
+  const t = await getTransporter();
   if (!t) {
     const status = getSmtpStatus();
     log.warn('SMTP send blocked: incomplete configuration', status);

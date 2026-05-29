@@ -1,6 +1,6 @@
 import { User } from '../models/User.js';
 import { Alert } from '../models/Alert.js';
-import { getEmailHealthStatus, sendHealthReportEmail } from '../services/emailService.js';
+import { getEmailHealthDetails, getEmailHealthStatus, sendHealthReportEmail } from '../services/emailService.js';
 import { env } from '../config/env.js';
 import { emitAlertNew } from '../services/socketService.js';
 
@@ -48,4 +48,8 @@ export async function reportHealthIssue(req, res, next) {
 
 export async function getEmailHealth(_req, res) {
   res.json(getEmailHealthStatus());
+}
+
+export async function getEmailHealthDetailsHandler(_req, res) {
+  res.json(getEmailHealthDetails());
 }
