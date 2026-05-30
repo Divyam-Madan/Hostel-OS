@@ -171,6 +171,7 @@ function StudentPanel({ onLogin }) {
     if (mode === 'signup') handleSignup();
     if (mode === 'verify') handleVerify();
     if (mode === 'forgot') handleForgot();
+    if (mode === 'recover') handleRecoverEmployeeId();
     if (mode === 'reset')  handleReset();
   };
 
@@ -252,7 +253,7 @@ function StudentPanel({ onLogin }) {
 /*  ADMIN PANEL                                                           */
 /* ────────────────────────────────────────────────────────────────────── */
 function AdminPanel({ onLogin }) {
-  // mode: login | signup | verify | forgot | reset
+  // mode: login | signup | verify | forgot | reset | recover
   const [mode, setMode]           = useState('login');
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState('');
@@ -269,6 +270,7 @@ function AdminPanel({ onLogin }) {
   const [loginOtp, setLoginOtp]   = useState('');
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotEmpId, setForgotEmpId] = useState('');
+  const [recoverEmail, setRecoverEmail] = useState('');
   const [resetOtp, setResetOtp]   = useState('');
   const [resetPw, setResetPw]     = useState('');
   /** Employee ID pending OTP verification (set after successful password step). */
@@ -325,6 +327,16 @@ function AdminPanel({ onLogin }) {
     setMode('reset');
   });
 
+  const handleRecoverEmployeeId = () => run(async () => {
+    if (!recoverEmail.trim()) throw new Error('Email required.');
+    await api('/admin/recover-employee-id', {
+      method: 'POST',
+      body: JSON.stringify({ email: recoverEmail.trim() }),
+    });
+    setSuccess('If an account exists, recovery instructions have been sent.');
+    go('login');
+  });
+
   const handleReset = () => run(async () => {
     if (!resetOtp.trim() || !resetPw) throw new Error('OTP and new password required.');
     if (resetPw.length < 8) throw new Error('Password must be at least 8 characters.');
@@ -375,6 +387,9 @@ function AdminPanel({ onLogin }) {
           </button>
           <div style={{ marginTop: 16, fontSize: 13, color: 'var(--text3)' }}>
             New admin account? <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--accent2)' }} onClick={() => go('signup')}>Register here</button>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text3)' }}>
+            Lost your Employee ID? <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--accent2)' }} onClick={() => go('recover')}>Recover via email</button>
           </div>
         </>
       )}
@@ -446,6 +461,21 @@ function AdminPanel({ onLogin }) {
           </Field>
           <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: 12, fontSize: 14, gap: 8, background: 'linear-gradient(135deg, var(--purple), var(--accent))' }} onClick={handleForgot} disabled={loading}>
             {loading ? <Spinner /> : null}{loading ? 'Sending…' : 'Send reset OTP →'}
+          </button>
+          <div style={{ marginTop: 16 }}>
+            <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--accent2)' }} onClick={() => go('login')}>← Back to login</button>
+          </div>
+        </>
+      )}
+
+      {mode === 'recover' && (
+        <>
+          <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 18 }}>Enter your registered email to receive your existing Employee ID.</p>
+          <Field label="Official Email">
+            <input className="input" type="email" value={recoverEmail} onChange={e => setRecoverEmail(e.target.value)} placeholder="admin@college.edu" />
+          </Field>
+          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: 12, fontSize: 14, gap: 8, background: 'linear-gradient(135deg, var(--purple), var(--accent))' }} onClick={handleRecoverEmployeeId} disabled={loading}>
+            {loading ? <Spinner /> : null}{loading ? 'Sending…' : 'Send Employee ID →'}
           </button>
           <div style={{ marginTop: 16 }}>
             <button type="button" className="btn btn-ghost btn-sm" style={{ color: 'var(--accent2)' }} onClick={() => go('login')}>← Back to login</button>
