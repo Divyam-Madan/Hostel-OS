@@ -22,6 +22,7 @@ export async function reportHealthIssue(req, res, next) {
       username: u.username,
       roomNumber: u.roomNumber,
       description: text,
+      routeName: '/health/report',
     });
 
     const alert = await Alert.create({

@@ -10,8 +10,11 @@ export const env = {
   JWT_SECRET: process.env.JWT_SECRET || 'dev-only-change-me',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
 
-  RESEND_API_KEY: process.env.RESEND_API_KEY,
-  EMAIL_FROM: process.env.EMAIL_FROM || 'HostelOS <noreply@hostelos.local>',
+  EMAIL_PROVIDER: process.env.EMAIL_PROVIDER || 'emailjs',
+  EMAILJS_SERVICE_ID: process.env.EMAILJS_SERVICE_ID || '',
+  EMAILJS_TEMPLATE_ID: process.env.EMAILJS_TEMPLATE_ID || '',
+  EMAILJS_PUBLIC_KEY: process.env.EMAILJS_PUBLIC_KEY || '',
+  EMAILJS_PRIVATE_KEY: process.env.EMAILJS_PRIVATE_KEY || '',
 
   HEALTH_CENTER_EMAIL: process.env.HEALTH_CENTER_EMAIL || 'health@college.edu',
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',

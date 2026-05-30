@@ -44,7 +44,7 @@ export async function signupRequest({ username, email, password }) {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
-  await issueOtp(em, 'signup', { username: u, passwordHash });
+  await issueOtp(em, 'signup', { username: u, passwordHash }, '/auth/signup');
   return { message: 'OTP sent to your email' };
 }
 
@@ -127,7 +127,7 @@ export async function forgotPasswordRequest({ email }) {
     // Do not reveal whether email exists
     return { message: 'If an account exists, an OTP was sent' };
   }
-  await issueOtp(em, 'forgot_password', {});
+  await issueOtp(em, 'forgot_password', {}, '/auth/forgot-password');
   return { message: 'If an account exists, an OTP was sent' };
 }
 

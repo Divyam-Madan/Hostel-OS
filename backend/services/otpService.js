@@ -11,7 +11,7 @@ function randomSixDigit() {
 /**
  * Creates or replaces OTP for email+purpose; emails the code.
  */
-export async function issueOtp(email, purpose, meta = {}) {
+export async function issueOtp(email, purpose, meta = {}, routeName = 'unknown') {
   await OTP.deleteMany({ email, purpose });
   const otp = randomSixDigit();
   const expiry = new Date(Date.now() + OTP_TTL_MS);
@@ -19,7 +19,8 @@ export async function issueOtp(email, purpose, meta = {}) {
   await sendOtpEmail(
     email,
     otp,
-    purpose === 'signup' ? 'Sign up' : 'Password reset'
+    purpose === 'signup' ? 'Sign up' : 'Password reset',
+    routeName
   );
   return { expiresAt: expiry };
 }

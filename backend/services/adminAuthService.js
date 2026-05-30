@@ -26,12 +26,12 @@ function randomSixDigit() {
   return String(crypto.randomInt(100000, 1000000));
 }
 
-async function storeOtp(admin, purpose = 'signin') {
+async function storeOtp(admin, purpose = 'signin', routeName = 'unknown') {
   const otp = randomSixDigit();
   const otpHash = await bcrypt.hash(otp, 10);
   const otpExpiry = new Date(Date.now() + OTP_TTL_MS);
   await Admin.updateOne({ _id: admin._id }, { $set: { otp: otpHash, otpExpiry } });
-  await sendOtpEmail(admin.email, otp, `Admin ${purpose}`);
+  await sendOtpEmail(admin.email, otp, `Admin ${purpose}`, routeName);
   return { otpExpiry };
 }
 
@@ -76,10 +76,10 @@ function normalizeEmployeeId(raw) {
   return s;
 }
 
-export async function sendEmployeeIdMail(email, employeeId, name) {
+export async function sendEmployeeIdMail(email, employeeId, name, routeName = 'unknown') {
   const subject = 'Your Employee ID';
   const text = `Hello ${name},\n\nYour HostelOS admin Employee ID is: ${employeeId}\n\nKeep this ID secure. You will need it to sign in.\n\n— HostelOS`;
-  await sendMail({ to: email, subject, text });
+  await sendMail({ to: email, subject, text, routeName });
 }
 
 function buildRecoveryQuery({ email, employeeId }) {
@@ -118,7 +118,7 @@ export async function adminSignupRequest({ name, email, password }) {
     employeeId,
   });
 
-  await sendEmployeeIdMail(em, employeeId, n);
+  await sendEmployeeIdMail(em, employeeId, n, '/admin/signup');
 
   return { message: 'Registration successful. Check your email for your Employee ID.' };
 }
@@ -146,7 +146,7 @@ export async function adminLoginRequest({ employeeId, password }) {
     throw e;
   }
 
-  await storeOtp(admin, 'sign-in');
+  await storeOtp(admin, 'sign-in', '/admin/login');
 
   return { message: 'OTP sent to your email' };
 }
@@ -187,7 +187,7 @@ export async function adminForgotPasswordRequest({ email, employeeId }) {
   if (!admin) {
     return { message: 'If an admin account exists, an OTP was sent' };
   }
-  await storeOtp(admin, 'password reset');
+  await storeOtp(admin, 'password reset', '/admin/forgot-password');
   return { message: 'If an admin account exists, an OTP was sent' };
 }
 
@@ -219,7 +219,7 @@ export async function recoverEmployeeIdRequest({ email }) {
   const em = assertEmail(email);
   const admin = await Admin.findOne({ email: em });
   if (admin) {
-    await sendEmployeeIdMail(admin.email, admin.employeeId, admin.name);
+    await sendEmployeeIdMail(admin.email, admin.employeeId, admin.name, '/admin/recover-employee-id');
   }
   return { message: 'If an account exists, recovery instructions have been sent.' };
 }

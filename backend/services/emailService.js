@@ -1,41 +1,11 @@
-import { Resend } from 'resend';
 import { env } from '../config/env.js';
 import { log } from '../utils/logger.js';
 
-const resend = env.RESEND_API_KEY ? new Resend(env.RESEND_API_KEY) : null;
+const EMAILJS_ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
+const EMAIL_PROVIDER = 'emailjs';
 
 function hasEnvValue(name) {
   return Object.prototype.hasOwnProperty.call(process.env, name) && String(process.env[name] || '').trim() !== '';
-}
-
-function parseSenderAddress(rawFrom) {
-  const value = String(rawFrom || '').trim();
-  const match = value.match(/<([^>]+)>/);
-  return String(match?.[1] || value).trim().toLowerCase();
-}
-
-function isLikelyUnverifiedSender(rawFrom) {
-  const senderAddress = parseSenderAddress(rawFrom);
-  const atIndex = senderAddress.lastIndexOf('@');
-  if (atIndex <= 0 || atIndex === senderAddress.length - 1) {
-    return true;
-  }
-
-  const domain = senderAddress.slice(atIndex + 1);
-  const commonConsumerDomains = new Set([
-    'gmail.com',
-    'googlemail.com',
-    'yahoo.com',
-    'outlook.com',
-    'hotmail.com',
-    'live.com',
-    'icloud.com',
-    'aol.com',
-    'proton.me',
-    'protonmail.com',
-  ]);
-
-  return commonConsumerDomains.has(domain);
 }
 
 function createEmailError(message, code = 'EMAIL_ERROR', statusCode = 503, extra = {}) {
@@ -47,11 +17,14 @@ function createEmailError(message, code = 'EMAIL_ERROR', statusCode = 503, extra
 }
 
 function getEmailProviderStatus() {
-  const emailFromConfigured = hasEnvValue('EMAIL_FROM');
   return {
-    provider: 'resend',
-    configured: Boolean(resend && emailFromConfigured),
-    emailFromConfigured,
+    provider: EMAIL_PROVIDER,
+    configured:
+      String(env.EMAIL_PROVIDER || '').trim().toLowerCase() === EMAIL_PROVIDER &&
+      hasEnvValue('EMAILJS_SERVICE_ID') &&
+      hasEnvValue('EMAILJS_TEMPLATE_ID') &&
+      hasEnvValue('EMAILJS_PUBLIC_KEY') &&
+      hasEnvValue('EMAILJS_PRIVATE_KEY'),
   };
 }
 
@@ -59,43 +32,29 @@ function classifyEmailFailure(err) {
   const code = String(err?.code || '').toUpperCase();
   const response = String(err?.message || '').toLowerCase();
 
-  if (code === 'EAUTH' || response.includes('authentication') || response.includes('auth')) {
-    return 'authentication failure';
+  if (response.includes('required') || response.includes('missing') || response.includes('invalid')) {
+    return 'configuration failure';
   }
-  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN' || response.includes('getaddrinfo') || response.includes('dns')) {
-    return 'DNS failure';
-  }
-  if (code === 'ETIMEDOUT' || (code === 'ESOCKET' && response.includes('timeout')) || response.includes('timeout')) {
+
+  if (code === 'ETIMEDOUT' || response.includes('timeout')) {
     return 'timeout';
   }
-  if (code === 'EPROTO' || response.includes('tls') || response.includes('ssl') || response.includes('certificate')) {
-    return 'TLS failure';
+
+  if (response.includes('failed to fetch') || response.includes('network') || response.includes('fetch')) {
+    return 'network failure';
   }
-  if (response.includes('rejected') || response.includes('relay')) {
-    return 'provider rejection';
-  }
+
   return 'provider failure';
 }
 
 export async function initializeEmailDiagnostics() {
   const status = getEmailProviderStatus();
   log.info('EMAIL PROVIDER STATUS:', status);
-  if (status.emailFromConfigured && isLikelyUnverifiedSender(env.EMAIL_FROM)) {
-    log.warn('EMAIL FROM STATUS: configured sender looks unverified for Resend', {
-      from: parseSenderAddress(env.EMAIL_FROM),
-      provider: 'resend',
-    });
-  }
   return status;
 }
 
 export function getEmailHealthStatus() {
-  const status = getEmailProviderStatus();
-  return {
-    provider: status.provider,
-    configured: status.configured,
-    emailFromConfigured: status.emailFromConfigured,
-  };
+  return getEmailProviderStatus();
 }
 
 export function getEmailHealthDetails() {
@@ -103,67 +62,102 @@ export function getEmailHealthDetails() {
 }
 
 /**
- * Sends mail via Resend; fails closed when configuration is incomplete or delivery fails.
+ * Sends mail via EmailJS; fails closed when configuration is incomplete or delivery fails.
  */
-export async function sendMail({ to, subject, text, html }) {
-  if (!resend) {
-    const status = getEmailProviderStatus();
+export async function sendMail({ to, subject, text, html, routeName = 'unknown', title, code, footer }) {
+  const status = getEmailProviderStatus();
+  if (!status.configured) {
     log.warn('EMAIL PROVIDER STATUS:', status);
-    throw createEmailError('Resend is not configured', 'EMAIL_NOT_CONFIGURED', 503);
+    throw createEmailError('EmailJS is not configured', 'EMAIL_NOT_CONFIGURED', 503);
   }
+
+  if (!to || !subject) {
+    throw createEmailError('Email delivery failed (missing recipient or subject)', 'EMAIL_SEND_FAILED', 503);
+  }
+
   try {
+    log.info('EMAIL ROUTE START:', {
+      route: routeName,
+      to,
+      subject,
+    });
     log.info('EMAIL SEND ATTEMPT:', {
-      from: env.EMAIL_FROM,
+      route: routeName,
       to,
       subject,
     });
 
-    const result = await resend.emails.send({
-      from: env.EMAIL_FROM,
+    const templateParams = {
+      email: to,
+      subject,
+      title: title || subject,
+      message: String(text || html || ''),
+      code: String(code || ''),
+      footer: footer || 'HostelOS',
+    };
+
+    const response = await fetch(EMAILJS_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        service_id: env.EMAILJS_SERVICE_ID,
+        template_id: env.EMAILJS_TEMPLATE_ID,
+        user_id: env.EMAILJS_PUBLIC_KEY,
+        accessToken: env.EMAILJS_PRIVATE_KEY,
+        template_params: templateParams,
+      }),
+    });
+
+    const responseText = String((await response.text()) || '').trim();
+    if (!response.ok || responseText !== 'OK') {
+      throw createEmailError(
+        `Email delivery failed (${response.status}${responseText ? `: ${responseText}` : ''})`,
+        'EMAIL_SEND_FAILED',
+        503,
+        { cause: new Error(responseText || `HTTP ${response.status}`), status: response.status, responseText },
+      );
+    }
+
+    log.info('EMAIL SEND SUCCESS:', {
+      route: routeName,
+      provider: EMAIL_PROVIDER,
       to,
       subject,
-      text,
-      html: html || text.replace(/\n/g, '<br/>'),
-    });
-
-    log.info('Resend sendMail response:', {
-      data: result?.data || null,
-      error: result?.error || null,
-    });
-
-    if (result?.error) {
-      throw createEmailError(`Email delivery failed (${classifyEmailFailure(result.error)})`, 'EMAIL_SEND_FAILED', 503, {
-        cause: result.error,
-      });
-    }
-
-    if (!result?.data?.id) {
-      throw createEmailError('Email delivery failed (missing Resend response id)', 'EMAIL_SEND_FAILED', 503, {
-        cause: new Error('Missing Resend response id'),
-      });
-    }
-
-    log.info('Resend email delivered:', {
-      id: result.data.id,
-      provider: 'resend',
     });
 
     return { sent: true };
   } catch (err) {
     const failure = classifyEmailFailure(err);
-    log.error(`Resend sendMail failure (${failure})`, err);
+    log.error(`EMAIL SEND FAILURE (${failure}) [${routeName}]`, err);
     throw createEmailError(`Email delivery failed (${failure})`, 'EMAIL_SEND_FAILED', 503, { cause: err });
   }
 }
 
-export async function sendOtpEmail(email, otp, purposeLabel) {
+export async function sendOtpEmail(email, otp, purposeLabel, routeName = 'unknown') {
   const subject = `HostelOS — Your verification code (${purposeLabel})`;
   const text = `Your HostelOS verification code is: ${otp}\n\nIt expires in 10 minutes.\nIf you did not request this, ignore this email.`;
-  return sendMail({ to: email, subject, text });
+  return sendMail({
+    to: email,
+    subject,
+    text,
+    routeName,
+    title: purposeLabel,
+    code: otp,
+    footer: 'HostelOS',
+  });
 }
 
-export async function sendHealthReportEmail({ to, username, roomNumber, description }) {
+export async function sendHealthReportEmail({ to, username, roomNumber, description, routeName = 'unknown' }) {
   const subject = `[HostelOS] Healthcare issue report — ${username} (${roomNumber || 'N/A'})`;
   const text = `Healthcare issue reported\n\nStudent: ${username}\nRoom: ${roomNumber || 'Not set'}\n\nDescription:\n${description}\n`;
-  return sendMail({ to, subject, text });
+  return sendMail({
+    to,
+    subject,
+    text,
+    routeName,
+    title: 'Healthcare issue report',
+    footer: 'HostelOS Health Center',
+  });
 }
